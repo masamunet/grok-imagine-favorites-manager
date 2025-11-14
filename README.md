@@ -62,7 +62,7 @@ Videos are automatically named to match their corresponding image files (using t
 - Make sure to scroll down to load all favorites before downloading
 - Video filenames automatically match their corresponding image names for easy pairing
 - Keep the tab open while unfavoriting to allow all actions to complete
-- **Only items with BOTH images and videos can be unfavorited** (image-only items don't have unfavorite buttons on Grok)
+- **Only items with BOTH images and videos can be unfavorited** (image-only items don't have unfavorite buttons on Grok's main favorites page)
 - Check browser console (F12) for detailed logs during unfavorite operations
 
 ## Support
