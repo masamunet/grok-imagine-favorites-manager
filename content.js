@@ -270,6 +270,12 @@ const ProgressModal = {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   const { action } = request;
   
+  // Handle ping to check if content script is loaded
+  if (action === 'ping') {
+    sendResponse({ loaded: true });
+    return true;
+  }
+  
   if (action === 'cancelOperation') {
     ProgressModal.cancel();
     chrome.storage.local.set({ activeOperation: false });
@@ -703,16 +709,17 @@ async function scrollAndCollectVideosForUpscale() {
     console.log('Found custom scroll container:', scrollContainer);
   }
   
-  const videoIds = [];
-  const seen = new Set();
+  // First pass: collect all video URLs and IDs while scrolling
+  const videoData = new Map(); // Map of videoId -> video URL
+  const seenUrls = new Set();
   let lastUniqueCount = 0;
   let unchangedCount = 0;
-  const maxUnchangedAttempts = 5;
+  const maxUnchangedAttempts = 7; // Increased from 5 for better coverage
   
   // Scroll to top first to ensure we capture everything
   console.log('Scrolling to top before collection...');
   scrollContainer.scrollTop = 0;
-  await new Promise(resolve => setTimeout(resolve, 500));
+  await new Promise(resolve => setTimeout(resolve, 1000)); // Increased wait time
   
   const viewportHeight = window.innerHeight;
   console.log(`Viewport height: ${viewportHeight}px`);
@@ -724,40 +731,29 @@ async function scrollAndCollectVideosForUpscale() {
       throw new Error('Operation cancelled by user');
     }
     
-    // Collect video IDs from currently visible cards
+    // Collect video URLs and IDs from currently visible cards (no async operations)
     const cards = document.querySelectorAll(SELECTORS.CARD);
     for (const card of cards) {
       const video = card.querySelector(SELECTORS.VIDEO);
       if (video && video.src) {
         const url = video.src.split('?')[0];
-        if (!seen.has(url) && url.includes('generated_video.mp4')) {
-          seen.add(url);
-          
-          // Only check if it's not already an HD video URL
-          if (!url.includes('generated_video_hd.mp4')) {
-            const videoId = extractVideoId(video.src);
-            if (videoId) {
-              // Check if HD version already exists using lightweight HEAD request
-              const hdUrl = video.src.replace('generated_video.mp4', 'generated_video_hd.mp4').split('?')[0];
-              const hdExists = await checkVideoExistsHTTP(hdUrl);
-              
-              if (!hdExists) {
-                videoIds.push(videoId);
-              } else {
-                console.log(`HD already exists for video ${videoId}, skipping`);
-              }
-            }
+        // Only process standard (non-HD) video URLs
+        if (!seenUrls.has(url) && url.includes('generated_video.mp4') && !url.includes('generated_video_hd.mp4')) {
+          seenUrls.add(url);
+          const videoId = extractVideoId(video.src);
+          if (videoId) {
+            videoData.set(videoId, url);
           }
         }
       }
     }
     
     const currentCardCount = cards.length;
-    const currentUniqueCount = videoIds.length;
-    console.log(`Current cards: ${currentCardCount}, Videos to upscale: ${currentUniqueCount}, Last unique: ${lastUniqueCount}`);
+    const currentUniqueCount = videoData.size;
+    console.log(`Current cards: ${currentCardCount}, Videos found: ${currentUniqueCount}, Last unique: ${lastUniqueCount}`);
     
-    const scrollProgress = Math.min(10, (unchangedCount / maxUnchangedAttempts) * 10);
-    ProgressModal.update(scrollProgress, `Collecting videos... Found ${currentUniqueCount} to upscale`);
+    const scrollProgress = Math.min(50, (unchangedCount / maxUnchangedAttempts) * 50);
+    ProgressModal.update(scrollProgress, `Collecting videos... Found ${currentUniqueCount} so far`);
     
     if (currentUniqueCount === lastUniqueCount) {
       unchangedCount++;
@@ -765,7 +761,7 @@ async function scrollAndCollectVideosForUpscale() {
     } else {
       unchangedCount = 0;
       lastUniqueCount = currentUniqueCount;
-      console.log(`New videos found! Total to upscale: ${currentUniqueCount}`);
+      console.log(`New videos found! Total collected: ${currentUniqueCount}`);
     }
     
     // Scroll down by viewport height
@@ -774,8 +770,8 @@ async function scrollAndCollectVideosForUpscale() {
     scrollContainer.scrollTop = newScroll;
     console.log(`Scrolled from ${currentScroll} to ${scrollContainer.scrollTop}`);
     
-    // Wait for content to load
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    // Wait for content to load - increased for better reliability
+    await new Promise(resolve => setTimeout(resolve, 2000));
   }
   
   // Scroll back to top
@@ -783,7 +779,38 @@ async function scrollAndCollectVideosForUpscale() {
   scrollContainer.scrollTop = 0;
   await new Promise(resolve => setTimeout(resolve, 500));
   
-  console.log(`Finished! Total videos to upscale: ${videoIds.length}`);
+  console.log(`Finished scrolling! Total videos found: ${videoData.size}`);
+  ProgressModal.update(50, `Checking which videos need upscaling...`);
+  
+  // Second pass: check which videos need upscaling (async operations after scrolling)
+  const videoIds = [];
+  let checkedCount = 0;
+  const totalVideos = videoData.size;
+  
+  for (const [videoId, videoUrl] of videoData) {
+    // Check for cancellation
+    if (ProgressModal.isCancelled()) {
+      console.log('HD check cancelled by user');
+      throw new Error('Operation cancelled by user');
+    }
+    
+    // Check if HD version already exists using lightweight HEAD request
+    const hdUrl = videoUrl.replace('generated_video.mp4', 'generated_video_hd.mp4');
+    const hdExists = await checkVideoExistsHTTP(hdUrl);
+    
+    if (!hdExists) {
+      videoIds.push(videoId);
+      console.log(`Video ${videoId} needs upscaling`);
+    } else {
+      console.log(`HD already exists for video ${videoId}, skipping`);
+    }
+    
+    checkedCount++;
+    const checkProgress = 50 + ((checkedCount / totalVideos) * 50);
+    ProgressModal.update(checkProgress, `Checked ${checkedCount}/${totalVideos} videos - ${videoIds.length} need upscaling`);
+  }
+  
+  console.log(`Finished! Total videos to upscale: ${videoIds.length} out of ${totalVideos} total`);
   return videoIds;
 }
 

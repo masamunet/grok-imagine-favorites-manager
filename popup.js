@@ -38,17 +38,52 @@ document.getElementById('unsaveVideos').addEventListener('click', () => sendActi
  * @param {string} action - Action to perform
  */
 function sendAction(action) {
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+  chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
     if (!tabs || tabs.length === 0) {
       console.error('No active tab found');
       return;
     }
     
-    chrome.tabs.sendMessage(tabs[0].id, { action }, (response) => {
+    const tab = tabs[0];
+    
+    // Try to ping the content script first
+    chrome.tabs.sendMessage(tab.id, { action: 'ping' }, async (response) => {
       if (chrome.runtime.lastError) {
-        // Silently ignore - content script will handle the action
-        // Error is expected when message is sent but no response needed
-        return;
+        // Content script not loaded, inject it
+        console.log('Content script not loaded, injecting...');
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            files: ['content.js']
+          });
+          
+          // Wait a moment for script to initialize
+          setTimeout(() => {
+            chrome.tabs.sendMessage(tab.id, { action }, (response) => {
+              // Ignore errors - content script handles the action asynchronously
+              if (chrome.runtime.lastError) {
+                // Only log if it's not the expected "no response" error
+                if (!chrome.runtime.lastError.message.includes('receiving end does not exist')) {
+                  console.warn('Message delivery issue:', chrome.runtime.lastError.message);
+                }
+              }
+            });
+          }, 100);
+        } catch (error) {
+          console.error('Failed to inject content script:', error);
+          alert('Failed to initialize extension. Please refresh the page and try again.');
+        }
+      } else {
+        // Content script is already loaded, send the action
+        chrome.tabs.sendMessage(tab.id, { action }, (response) => {
+          // Ignore errors - content script handles the action asynchronously
+          if (chrome.runtime.lastError) {
+            // Only log if it's not the expected "no response" error
+            if (!chrome.runtime.lastError.message.includes('receiving end does not exist')) {
+              console.warn('Message delivery issue:', chrome.runtime.lastError.message);
+            }
+          }
+        });
       }
     });
   });

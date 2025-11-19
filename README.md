@@ -2,13 +2,30 @@
 
 A modern Chrome extension to download and manage your favorited Grok Imagine images and videos.
 
-<img width="338" height="596" alt="Screenshot 2025-11-18 at 3 58 38 PM" src="https://github.com/user-attachments/assets/e027c171-1250-4c05-8c32-c8128dabdd4e" />
+<img width="338" height="596" alt="Screenshot 2025-11-18 at 3 58 38 PM" src="https://github.com/user-attachments/assets/e027c171-1250-4c05-8c32-c8128dabdd4e" />
 
 <img width="408" height="257" alt="Screenshot 2025-11-17 at 10 23 38 AM" src="https://github.com/user-attachments/assets/51ac09e1-8973-4cf3-a5e7-034677b62cdf" />
 
-## ⚠️ Disclaimer
+---
 
-**Grok Imagine is constantly evolving and changing.** This extension may break or require updates as Grok's interface and API endpoints change. Use at your own risk and be prepared for potential issues as the platform updates.
+## ⚠️ IMPORTANT DISCLAIMER - READ BEFORE USE ⚠️
+
+**USE AT YOUR OWN RISK. THIS IS AN UNOFFICIAL, THIRD-PARTY TOOL.**
+
+- **NOT AFFILIATED** with Grok, X, or any official entities
+- **NO WARRANTY** - This extension is provided "AS IS" without any guarantees
+- **NO RESPONSIBILITY** - The developer is not responsible for:
+  - Data loss or corruption
+  - Account issues or bans
+  - API changes breaking functionality
+  - Any damages or issues arising from use
+- **BREAKING CHANGES EXPECTED** - Grok Imagine is constantly evolving. This extension may break at any time as the platform updates its interface, API endpoints, or policies
+- **EXPERIMENTAL SOFTWARE** - Features may be unstable or incomplete
+- **YOUR RESPONSIBILITY** - By using this extension, you acknowledge and accept all risks
+
+**If you cannot accept these terms, do not use this extension.**
+
+---
 
 ## Features
 

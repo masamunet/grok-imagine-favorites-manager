@@ -3,7 +3,7 @@
   "name": "Grok Imagine Favorites Manager",
   "version": "1.0",
   "description": "Download and manage favorited Grok Imagine media",
-  "permissions": ["activeTab", "downloads", "storage"],
+  "permissions": ["activeTab", "downloads", "storage", "scripting"],
   "host_permissions": ["https://grok.com/*"],
   "action": {
     "default_popup": "popup.html"
