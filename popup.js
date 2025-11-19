@@ -11,6 +11,9 @@ const PROGRESS_CLEAR_DELAY = 5000; // Clear progress after 5 seconds
  * Initialize event listeners when DOM is ready
  */
 document.addEventListener('DOMContentLoaded', () => {
+  // Check if we're on the favorites page first
+  checkIfOnFavoritesPage();
+  
   // Download actions
   document.getElementById('saveImages').addEventListener('click', () => sendAction('saveImages'));
   document.getElementById('saveVideos').addEventListener('click', () => sendAction('saveVideos'));
@@ -32,6 +35,47 @@ document.getElementById('unsaveVideos').addEventListener('click', () => sendActi
   // Check for active operations
   checkActiveOperation();
 });
+
+/**
+ * Check if user is on the favorites page and disable buttons if not
+ */
+function checkIfOnFavoritesPage() {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (!tabs || tabs.length === 0) return;
+    
+    const tab = tabs[0];
+    const url = tab.url || '';
+    const isFavoritesPage = url.includes('grok.com/imagine/favorites');
+    
+    if (!isFavoritesPage) {
+      // Disable all action buttons
+      const actionButtons = [
+        'saveImages', 'saveVideos', 'saveBoth', 'upscaleVideos',
+        'unsaveBoth', 'unsaveImages', 'unsaveVideos'
+      ];
+      
+      actionButtons.forEach(buttonId => {
+        const button = document.getElementById(buttonId);
+        if (button) {
+          button.disabled = true;
+          button.style.opacity = '0.5';
+          button.style.cursor = 'not-allowed';
+          button.title = 'Only available on grok.com/imagine/favorites page';
+        }
+      });
+      
+      // Show warning message
+      const container = document.querySelector('.container');
+      if (container) {
+        const warning = document.createElement('div');
+        warning.style.cssText = 'background: #fff3cd; border: 1px solid #ffc107; color: #856404; padding: 10px; margin-bottom: 10px; border-radius: 4px; font-size: 12px; text-align: center;';
+        warning.textContent = '⚠️ Navigate to grok.com/imagine/favorites to use this extension';
+        container.insertBefore(warning, container.firstChild);
+      }
+    }
+  });
+}
+
 
 /**
  * Sends action message to content script
