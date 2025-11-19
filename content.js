@@ -483,6 +483,11 @@ async function scrollAndCollectPostIds(filterFn) {
   let unchangedCount = 0;
   const maxUnchangedAttempts = 5;
   
+  // Scroll to top first to ensure we capture everything
+  console.log('Scrolling to top before collection...');
+  scrollContainer.scrollTop = 0;
+  await new Promise(resolve => setTimeout(resolve, 500));
+  
   // Get viewport height for relative scrolling
   const viewportHeight = window.innerHeight;
   console.log(`Viewport height: ${viewportHeight}px`);
@@ -593,6 +598,11 @@ async function scrollToLoadAll() {
   const maxUnchangedAttempts = 5;
   const seenCards = new Set();
   
+  // Scroll to top first to ensure we capture everything
+  console.log('Scrolling to top before loading...');
+  scrollContainer.scrollTop = 0;
+  await new Promise(resolve => setTimeout(resolve, 500));
+  
   // Get viewport height for relative scrolling
   const viewportHeight = window.innerHeight;
   console.log(`Viewport height: ${viewportHeight}px`);
@@ -682,6 +692,11 @@ async function scrollAndCollectVideosForUpscale() {
   let lastCardCount = 0;
   let unchangedCount = 0;
   const maxUnchangedAttempts = 5;
+  
+  // Scroll to top first to ensure we capture everything
+  console.log('Scrolling to top before collection...');
+  scrollContainer.scrollTop = 0;
+  await new Promise(resolve => setTimeout(resolve, 500));
   
   const viewportHeight = window.innerHeight;
   console.log(`Viewport height: ${viewportHeight}px`);
@@ -794,6 +809,11 @@ async function scrollAndCollectMedia(type) {
   let lastCardCount = 0;
   let unchangedCount = 0;
   const maxUnchangedAttempts = 5;
+  
+  // Scroll to top first to ensure we capture everything
+  console.log('Scrolling to top before collection...');
+  scrollContainer.scrollTop = 0;
+  await new Promise(resolve => setTimeout(resolve, 500));
   
   // Get viewport height for relative scrolling
   const viewportHeight = window.innerHeight;
