@@ -46,7 +46,7 @@ async function unlikePost(postId) {
       credentials: 'include',
       body: JSON.stringify({ id: postId })
     });
-    
+
     return response.ok;
   } catch (error) {
     console.error(`Failed to unlike post ${postId}:`, error);
@@ -63,7 +63,7 @@ async function upscaleVideo(videoId) {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), TIMING.UPSCALE_TIMEOUT);
-    
+
     const response = await fetch(API.UPSCALE_ENDPOINT, {
       method: 'POST',
       headers: {
@@ -74,7 +74,7 @@ async function upscaleVideo(videoId) {
       body: JSON.stringify({ videoId }),
       signal: controller.signal
     });
-    
+
     clearTimeout(timeoutId);
     return response.ok;
   } catch (error) {
@@ -105,10 +105,10 @@ function extractVideoId(videoUrl) {
 const ProgressModal = {
   modal: null,
   cancelled: false,
-  
+
   create() {
     if (this.modal) return;
-    
+
     this.modal = document.createElement('div');
     this.modal.id = 'grok-favorites-progress-modal';
     this.modal.innerHTML = `
@@ -202,15 +202,15 @@ const ProgressModal = {
         </div>
       </div>
     `;
-    
+
     document.body.appendChild(this.modal);
-    
+
     // Add cancel button event listener
     document.getElementById('grok-cancel-button').addEventListener('click', () => {
       this.cancel();
     });
   },
-  
+
   show(title, subtitle = '') {
     this.cancelled = false;
     this.create();
@@ -219,7 +219,7 @@ const ProgressModal = {
     document.getElementById('grok-progress-subtitle').textContent = subtitle;
     document.getElementById('grok-progress-bar').style.width = '0%';
     document.getElementById('grok-progress-details').textContent = 'Starting...';
-    
+
     // Reset cancel button state
     const cancelBtn = document.getElementById('grok-cancel-button');
     cancelBtn.style.display = 'block';
@@ -228,14 +228,14 @@ const ProgressModal = {
     cancelBtn.style.opacity = '1';
     cancelBtn.style.cursor = 'pointer';
   },
-  
+
   update(progress, details) {
     if (!this.modal) return;
     const percentage = Math.min(100, Math.max(0, progress));
     document.getElementById('grok-progress-bar').style.width = `${percentage}%`;
     document.getElementById('grok-progress-details').textContent = details;
   },
-  
+
   cancel() {
     this.cancelled = true;
     this.update(0, 'Cancelling operation...');
@@ -244,18 +244,18 @@ const ProgressModal = {
     document.getElementById('grok-cancel-button').style.opacity = '0.5';
     document.getElementById('grok-cancel-button').style.cursor = 'not-allowed';
   },
-  
+
   isCancelled() {
     return this.cancelled;
   },
-  
+
   hide() {
     if (this.modal) {
       this.modal.style.display = 'none';
     }
     this.cancelled = false;
   },
-  
+
   remove() {
     if (this.modal) {
       this.modal.remove();
@@ -270,25 +270,25 @@ const ProgressModal = {
  */
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   const { action } = request;
-  
+
   // Handle ping to check if content script is loaded
   if (action === 'ping') {
     sendResponse({ loaded: true });
     return true;
   }
-  
+
   if (action === 'cancelOperation') {
     ProgressModal.cancel();
     chrome.storage.local.set({ activeOperation: false });
     sendResponse({ success: true });
     return;
   }
-  
+
   (async () => {
     try {
       // Mark operation as active
       chrome.storage.local.set({ activeOperation: true });
-      
+
       if (action === 'upscaleVideos') {
         await handleUpscale();
       } else if (action.startsWith('save')) {
@@ -299,7 +299,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     } catch (error) {
       console.error('Error handling action:', error);
       ProgressModal.hide();
-      
+
       // Show refresh prompt for both errors and cancellations
       if (error.message.includes('cancelled')) {
         const shouldRefresh = confirm('Operation cancelled.\n\nClick OK to refresh the page.');
@@ -415,7 +415,7 @@ function isValidUrl(url, patterns) {
  */
 async function checkVideoExistsHTTP(url) {
   try {
-    const response = await fetch(url, { 
+    const response = await fetch(url, {
       method: 'HEAD',
       credentials: 'include'
     });
@@ -434,7 +434,7 @@ function checkVideoExists(url) {
   return new Promise((resolve) => {
     const video = document.createElement('video');
     video.preload = 'metadata';
-    
+
     const cleanup = () => {
       // Remove event listeners to prevent memory leaks
       video.onloadedmetadata = null;
@@ -443,24 +443,24 @@ function checkVideoExists(url) {
       video.load(); // Force release of resources
       // Don't keep reference to video element
     };
-    
+
     const timeout = setTimeout(() => {
       cleanup();
       resolve(false);
     }, 3000); // 3 second timeout
-    
+
     video.onloadedmetadata = () => {
       clearTimeout(timeout);
       cleanup();
       resolve(true);
     };
-    
+
     video.onerror = () => {
       clearTimeout(timeout);
       cleanup();
       resolve(false);
     };
-    
+
     video.src = url;
   });
 }
@@ -472,7 +472,7 @@ function checkVideoExists(url) {
  */
 async function scrollAndCollectPostIds(filterFn) {
   console.log('Starting scroll to collect post IDs...');
-  
+
   // Find the scrollable container
   let scrollContainer = document.documentElement;
   const possibleContainers = [
@@ -485,45 +485,45 @@ async function scrollAndCollectPostIds(filterFn) {
       return style.overflowY === 'auto' || style.overflowY === 'scroll';
     })
   ].filter(el => el !== null);
-  
+
   if (possibleContainers.length > 0) {
     scrollContainer = possibleContainers.reduce((tallest, current) => {
       return current.scrollHeight > tallest.scrollHeight ? current : tallest;
     });
     console.log('Found custom scroll container:', scrollContainer);
   }
-  
+
   // First, collect ALL item data while scrolling (don't filter yet)
   const allItemsData = new Map(); // Map of postId -> { hasVideo, hasImage }
   let unchangedScrollCount = 0;
   const maxUnchangedScrollAttempts = 3; // If scroll height doesn't change 3 times, we're at the bottom
-  
+
   // Scroll to top first to ensure we capture everything
   console.log('Scrolling to top before collection...');
   scrollContainer.scrollTop = 0;
   await new Promise(resolve => setTimeout(resolve, 1000));
-  
+
   // Initialize previousScrollHeight AFTER scrolling to top and waiting
   let previousScrollHeight = scrollContainer.scrollHeight;
   console.log(`Initial scroll height: ${previousScrollHeight}`);
-  
+
   // Get viewport height for relative scrolling
   const viewportHeight = window.innerHeight;
   const scrollIncrement = Math.floor(viewportHeight / 2); // Scroll by HALF viewport to avoid skipping items
   console.log(`Viewport height: ${viewportHeight}px, Scroll increment: ${scrollIncrement}px`);
-  
+
   while (unchangedScrollCount < maxUnchangedScrollAttempts) {
     // Check for cancellation
     if (ProgressModal.isCancelled()) {
       console.log('Collection cancelled by user');
       throw new Error('Operation cancelled by user');
     }
-    
+
     // Collect ALL items and their metadata (video/image presence)
     const cards = document.querySelectorAll(SELECTORS.CARD);
     let videosInBatch = 0;
     let imagesInBatch = 0;
-    
+
     cards.forEach((card) => {
       // Extract post ID from image (every post has an image)
       let postId = null;
@@ -534,7 +534,7 @@ async function scrollAndCollectPostIds(filterFn) {
           postId = match[1];
         }
       }
-      
+
       // Check if this post has a video by looking for video element with matching UUID
       let hasVideo = false;
       const video = card.querySelector(SELECTORS.VIDEO);
@@ -545,19 +545,19 @@ async function scrollAndCollectPostIds(filterFn) {
           videosInBatch++;
         }
       }
-      
+
       const hasImage = !!img;
-      
+
       if (hasImage) imagesInBatch++;
-      
+
       // Store the item data - track if we've EVER seen a video for this post
       if (postId) {
         const existing = allItemsData.get(postId);
         if (existing) {
           // If we've seen this post before, keep video=true if either occurrence had a video
-          allItemsData.set(postId, { 
-            hasVideo: existing.hasVideo || hasVideo, 
-            hasImage: existing.hasImage || hasImage 
+          allItemsData.set(postId, {
+            hasVideo: existing.hasVideo || hasVideo,
+            hasImage: existing.hasImage || hasImage
           });
           if (hasVideo && !existing.hasVideo) {
             console.log(`Post ${postId.substring(0, 8)}... NOW detected as having video`);
@@ -567,10 +567,10 @@ async function scrollAndCollectPostIds(filterFn) {
         }
       }
     });
-    
+
     const currentScrollHeight = scrollContainer.scrollHeight;
     console.log(`Current cards: ${cards.length}, Videos in view: ${videosInBatch}, Images in view: ${imagesInBatch}, Total collected: ${allItemsData.size}, ScrollHeight: ${currentScrollHeight}`);
-    
+
     // Log a sample of what we're detecting
     if (allItemsData.size <= 10) {
       console.log('Sample of detected items:', Array.from(allItemsData.entries()).slice(0, 5).map(([id, data]) => ({
@@ -579,7 +579,7 @@ async function scrollAndCollectPostIds(filterFn) {
         hasImage: data.hasImage
       })));
     }
-    
+
     // Check if scroll height has changed (means more content loaded)
     if (currentScrollHeight === previousScrollHeight) {
       unchangedScrollCount++;
@@ -589,20 +589,20 @@ async function scrollAndCollectPostIds(filterFn) {
       previousScrollHeight = currentScrollHeight;
       console.log(`Scroll height increased, continuing...`);
     }
-    
+
     const scrollProgress = Math.min(80, (scrollContainer.scrollTop / currentScrollHeight) * 80);
     ProgressModal.update(scrollProgress, `Collecting items... Found ${allItemsData.size} so far`);
-    
+
     // Scroll down by HALF viewport height to avoid skipping items in virtual scroll
     const currentScroll = scrollContainer.scrollTop;
     const newScroll = currentScroll + scrollIncrement;
     scrollContainer.scrollTop = newScroll;
     console.log(`Scrolled from ${currentScroll} to ${scrollContainer.scrollTop}`);
-    
+
     // Wait for content to load
     await new Promise(resolve => setTimeout(resolve, 2000));
   }
-  
+
   // Now filter the collected items based on the filter function
   console.log('Filtering collected items...');
   const filteredPostIds = [];
@@ -611,16 +611,16 @@ async function scrollAndCollectPostIds(filterFn) {
       filteredPostIds.push(postId);
     }
   }
-  
+
   console.log(`Total items collected: ${allItemsData.size}, After filtering: ${filteredPostIds.length}`);
   ProgressModal.update(85, `Filtered to ${filteredPostIds.length} items...`);
-  
+
   // Scroll back to top
   console.log('Scrolling back to top');
   ProgressModal.update(90, 'Scrolling back to top...');
   scrollContainer.scrollTop = 0;
   await new Promise(resolve => setTimeout(resolve, 500));
-  
+
   console.log(`Finished! Total post IDs collected: ${filteredPostIds.length}`);
   return filteredPostIds;
 }
@@ -631,9 +631,9 @@ async function scrollAndCollectPostIds(filterFn) {
  */
 async function scrollToLoadAll() {
   console.log('Starting scroll to load all content...');
-  
+
   ProgressModal.update(0, 'Finding scrollable container...');
-  
+
   // Find the scrollable container
   let scrollContainer = document.documentElement;
   const possibleContainers = [
@@ -646,29 +646,29 @@ async function scrollToLoadAll() {
       return style.overflowY === 'auto' || style.overflowY === 'scroll';
     })
   ].filter(el => el !== null);
-  
+
   if (possibleContainers.length > 0) {
     scrollContainer = possibleContainers.reduce((tallest, current) => {
       return current.scrollHeight > tallest.scrollHeight ? current : tallest;
     });
     console.log('Found custom scroll container:', scrollContainer);
   }
-  
+
   let lastUniqueCount = 0;
   let unchangedCount = 0;
   const maxUnchangedAttempts = 5;
   const seenCards = new Set();
-  
+
   // Scroll to top first to ensure we capture everything
   console.log('Scrolling to top before loading...');
   scrollContainer.scrollTop = 0;
   await new Promise(resolve => setTimeout(resolve, 500));
-  
+
   // Get viewport height for relative scrolling
   const viewportHeight = window.innerHeight;
   const scrollIncrement = Math.floor(viewportHeight / 2); // Scroll by HALF viewport to avoid skipping items
   console.log(`Viewport height: ${viewportHeight}px, Scroll increment: ${scrollIncrement}px`);
-  
+
   while (unchangedCount < maxUnchangedAttempts) {
     // Track unique cards (use image src as identifier to handle virtual scrolling)
     const cards = document.querySelectorAll(SELECTORS.CARD);
@@ -678,20 +678,20 @@ async function scrollToLoadAll() {
         seenCards.add(img.src);
       }
     });
-    
+
     const currentCardCount = cards.length;
     const totalUnique = seenCards.size;
     console.log(`Current cards in DOM: ${currentCardCount}, Total unique seen: ${totalUnique}, Last unique: ${lastUniqueCount}`);
-    
+
     // Check for cancellation
     if (ProgressModal.isCancelled()) {
       console.log('Scroll loading cancelled by user');
       throw new Error('Operation cancelled by user');
     }
-    
+
     const scrollProgress = Math.min(80, (unchangedCount / maxUnchangedAttempts) * 80);
     ProgressModal.update(scrollProgress, `Loading favorites... Found ${totalUnique} items so far`);
-    
+
     if (totalUnique === lastUniqueCount) {
       unchangedCount++;
       console.log(`No new unique items found (${unchangedCount}/${maxUnchangedAttempts})`);
@@ -700,23 +700,23 @@ async function scrollToLoadAll() {
       lastUniqueCount = totalUnique;
       console.log(`New unique items found! Total: ${totalUnique}`);
     }
-    
+
     // Scroll down by HALF viewport height to avoid skipping items in virtual scroll
     const currentScroll = scrollContainer.scrollTop;
     const newScroll = currentScroll + scrollIncrement;
     scrollContainer.scrollTop = newScroll;
     console.log(`Scrolled from ${currentScroll} to ${scrollContainer.scrollTop}`);
-    
+
     // Wait for content to load
     await new Promise(resolve => setTimeout(resolve, 1500));
   }
-  
+
   // Scroll back to top
   console.log('Scrolling back to top');
   ProgressModal.update(90, 'Scrolling back to top...');
   scrollContainer.scrollTop = 0;
   await new Promise(resolve => setTimeout(resolve, 500));
-  
+
   const finalCount = seenCards.size;
   console.log(`Finished! Total unique items loaded: ${finalCount}`);
   ProgressModal.update(100, `Loaded ${finalCount} total items`);
@@ -728,7 +728,7 @@ async function scrollToLoadAll() {
  */
 async function scrollAndCollectVideosForUpscale() {
   console.log('Starting scroll to collect videos for upscaling...');
-  
+
   // Find the scrollable container
   let scrollContainer = document.documentElement;
   const possibleContainers = [
@@ -741,40 +741,40 @@ async function scrollAndCollectVideosForUpscale() {
       return style.overflowY === 'auto' || style.overflowY === 'scroll';
     })
   ].filter(el => el !== null);
-  
+
   if (possibleContainers.length > 0) {
     scrollContainer = possibleContainers.reduce((tallest, current) => {
       return current.scrollHeight > tallest.scrollHeight ? current : tallest;
     });
     console.log('Found custom scroll container:', scrollContainer);
   }
-  
+
   // First pass: collect all video URLs and IDs while scrolling
   const videoData = new Map(); // Map of videoId -> video URL
   const seenUrls = new Set();
   let unchangedScrollCount = 0;
   const maxUnchangedScrollAttempts = 3; // If scroll height doesn't change 3 times, we're at the bottom
-  
+
   // Scroll to top first to ensure we capture everything
   console.log('Scrolling to top before collection...');
   scrollContainer.scrollTop = 0;
   await new Promise(resolve => setTimeout(resolve, 1000));
-  
+
   // Initialize previousScrollHeight AFTER scrolling to top and waiting
   let previousScrollHeight = scrollContainer.scrollHeight;
   console.log(`Initial scroll height: ${previousScrollHeight}`);
-  
+
   const viewportHeight = window.innerHeight;
   const scrollIncrement = Math.floor(viewportHeight / 2); // Scroll by HALF viewport to avoid skipping items
   console.log(`Viewport height: ${viewportHeight}px, Scroll increment: ${scrollIncrement}px`);
-  
+
   while (unchangedScrollCount < maxUnchangedScrollAttempts) {
     // Check for cancellation
     if (ProgressModal.isCancelled()) {
       console.log('Collection cancelled by user');
       throw new Error('Operation cancelled by user');
     }
-    
+
     // Collect video URLs and IDs from currently visible cards (no async operations)
     const cards = document.querySelectorAll(SELECTORS.CARD);
     for (const card of cards) {
@@ -791,12 +791,12 @@ async function scrollAndCollectVideosForUpscale() {
         }
       }
     }
-    
+
     const currentCardCount = cards.length;
     const currentUniqueCount = videoData.size;
     const currentScrollHeight = scrollContainer.scrollHeight;
     console.log(`Current cards: ${currentCardCount}, Videos found: ${currentUniqueCount}, ScrollHeight: ${currentScrollHeight}`);
-    
+
     // Check if scroll height has changed (means more content loaded)
     if (currentScrollHeight === previousScrollHeight) {
       unchangedScrollCount++;
@@ -806,56 +806,56 @@ async function scrollAndCollectVideosForUpscale() {
       previousScrollHeight = currentScrollHeight;
       console.log(`Scroll height increased, continuing...`);
     }
-    
+
     const scrollProgress = Math.min(50, (scrollContainer.scrollTop / currentScrollHeight) * 50);
     ProgressModal.update(scrollProgress, `Collecting videos... Found ${currentUniqueCount} so far`);
-    
+
     // Scroll down by HALF viewport height to avoid skipping items in virtual scroll
     const currentScroll = scrollContainer.scrollTop;
     const newScroll = currentScroll + scrollIncrement;
     scrollContainer.scrollTop = newScroll;
     console.log(`Scrolled from ${currentScroll} to ${scrollContainer.scrollTop}`);
-    
+
     // Wait for content to load - increased for better reliability
     await new Promise(resolve => setTimeout(resolve, 2000));
   }
-  
+
   // Scroll back to top
   console.log('Scrolling back to top');
   scrollContainer.scrollTop = 0;
   await new Promise(resolve => setTimeout(resolve, 500));
-  
+
   console.log(`Finished scrolling! Total videos found: ${videoData.size}`);
   ProgressModal.update(50, `Checking which videos need upscaling...`);
-  
+
   // Second pass: check which videos need upscaling (async operations after scrolling)
   const videoIds = [];
   let checkedCount = 0;
   const totalVideos = videoData.size;
-  
+
   for (const [videoId, videoUrl] of videoData) {
     // Check for cancellation
     if (ProgressModal.isCancelled()) {
       console.log('HD check cancelled by user');
       throw new Error('Operation cancelled by user');
     }
-    
+
     // Check if HD version already exists using lightweight HEAD request
     const hdUrl = videoUrl.replace('generated_video.mp4', 'generated_video_hd.mp4');
     const hdExists = await checkVideoExistsHTTP(hdUrl);
-    
+
     if (!hdExists) {
       videoIds.push(videoId);
       console.log(`Video ${videoId} needs upscaling`);
     } else {
       console.log(`HD already exists for video ${videoId}, skipping`);
     }
-    
+
     checkedCount++;
     const checkProgress = 50 + ((checkedCount / totalVideos) * 50);
     ProgressModal.update(checkProgress, `Checked ${checkedCount}/${totalVideos} videos - ${videoIds.length} need upscaling`);
   }
-  
+
   console.log(`Finished! Total videos to upscale: ${videoIds.length} out of ${totalVideos} total`);
   return videoIds;
 }
@@ -867,13 +867,13 @@ async function scrollAndCollectVideosForUpscale() {
  */
 async function scrollAndCollectMedia(type) {
   console.log('Starting scroll to load and collect all content...');
-  
+
   // Check for cancellation at start
   if (ProgressModal.isCancelled()) {
     console.log('Scroll and collect cancelled by user');
     throw new Error('Operation cancelled by user');
   }
-  
+
   // Find the scrollable container
   let scrollContainer = document.documentElement;
   const possibleContainers = [
@@ -886,79 +886,79 @@ async function scrollAndCollectMedia(type) {
       return style.overflowY === 'auto' || style.overflowY === 'scroll';
     })
   ].filter(el => el !== null);
-  
+
   if (possibleContainers.length > 0) {
     scrollContainer = possibleContainers.reduce((tallest, current) => {
       return current.scrollHeight > tallest.scrollHeight ? current : tallest;
     });
     console.log('Found custom scroll container:', scrollContainer);
   }
-  
+
   // First, collect ALL media data while scrolling (don't process yet)
   const allMediaData = new Map(); // Map of url -> { url, filename, isVideo, isHD }
   let unchangedScrollCount = 0;
   const maxUnchangedScrollAttempts = 3; // If scroll height doesn't change 3 times, we're at the bottom
-  
+
   // Scroll to top first to ensure we capture everything
   console.log('Scrolling to top before collection...');
   scrollContainer.scrollTop = 0;
   await new Promise(resolve => setTimeout(resolve, 1000));
-  
+
   // Initialize previousScrollHeight AFTER scrolling to top and waiting
   let previousScrollHeight = scrollContainer.scrollHeight;
   console.log(`Initial scroll height: ${previousScrollHeight}`);
-  
+
   // Get viewport height for relative scrolling
   const viewportHeight = window.innerHeight;
   const scrollIncrement = Math.floor(viewportHeight / 2); // Scroll by HALF viewport to avoid skipping items
   console.log(`Viewport height: ${viewportHeight}px, Scroll increment: ${scrollIncrement}px`);
-  
+
   while (unchangedScrollCount < maxUnchangedScrollAttempts) {
     // Check for cancellation
     if (ProgressModal.isCancelled()) {
       console.log('Scroll and collect cancelled by user');
       throw new Error('Operation cancelled by user');
     }
-    
+
     // Collect ALL media from currently visible cards
     const cards = document.querySelectorAll(SELECTORS.CARD);
-    
+
     for (const card of cards) {
       let imageName = null;
-      
+
       // Extract image
       const img = card.querySelector(SELECTORS.IMAGE);
       if (img && img.src) {
-        const url = img.src.split('?')[0];
-        
+        const url = img.src.split('?')[0].replace(/\/cdn-cgi\/image\/[^\/]*\//, '/');
+
         if (isValidUrl(url, URL_PATTERNS.IMAGE)) {
           const filename = determineFilename(url, null, false);
           imageName = extractBaseName(url);
-          
+
           // Store image data
           if (!allMediaData.has(url)) {
-            allMediaData.set(url, { url: img.src, filename, isVideo: false, isHD: false });
+            allMediaData.set(url, { url: url, filename, isVideo: false, isHD: false });
           }
         }
       }
-      
+
       // Extract video
       const video = card.querySelector(SELECTORS.VIDEO);
       if (video && video.src) {
         const url = video.src.split('?')[0];
-        
+
         if (!allMediaData.has(url)) {
           const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
           const filename = (imageName && uuidRe.test(imageName)) ? `${imageName}.mp4` : determineFilename(url, imageName || null, true);
-          
+
           // Store video data
           allMediaData.set(url, { url: video.src, filename, isVideo: true, isHD: false });
-          
+
           // Also track potential HD version URL
           if (url.includes('generated_video.mp4')) {
             const hdUrl = video.src.replace('generated_video.mp4', 'generated_video_hd.mp4');
             const hdFilename = filename.replace(/(\.[^.]+)$/, '-HD$1');
-            
+
             if (!allMediaData.has(hdUrl)) {
               allMediaData.set(hdUrl, { url: hdUrl, filename: hdFilename, isVideo: true, isHD: true });
             }
@@ -966,10 +966,10 @@ async function scrollAndCollectMedia(type) {
         }
       }
     }
-    
+
     const currentScrollHeight = scrollContainer.scrollHeight;
     console.log(`Current cards: ${cards.length}, Total media collected: ${allMediaData.size}, ScrollHeight: ${currentScrollHeight}`);
-    
+
     // Check if scroll height has changed (means more content loaded)
     if (currentScrollHeight === previousScrollHeight) {
       unchangedScrollCount++;
@@ -979,80 +979,80 @@ async function scrollAndCollectMedia(type) {
       previousScrollHeight = currentScrollHeight;
       console.log(`Scroll height increased, continuing...`);
     }
-    
+
     const scrollProgress = Math.min(60, (scrollContainer.scrollTop / currentScrollHeight) * 60);
     ProgressModal.update(scrollProgress, `Collecting media... Found ${allMediaData.size} items so far`);
-    
+
     // Scroll down by HALF viewport height to avoid skipping items in virtual scroll
     const currentScroll = scrollContainer.scrollTop;
     const newScroll = currentScroll + scrollIncrement;
     scrollContainer.scrollTop = newScroll;
     console.log(`Scrolled from ${currentScroll} to ${scrollContainer.scrollTop}`);
-    
+
     // Wait for content to load
     await new Promise(resolve => setTimeout(resolve, 2000));
   }
-  
+
   // Now filter and process the collected media based on type
   console.log('Processing collected media...');
   ProgressModal.update(70, 'Processing collected media...');
-  
+
   const media = [];
   const hdVideosToCheck = []; // Collect HD videos to check separately
-  
+
   for (const [url, data] of allMediaData) {
     // Handle HD videos separately - queue them for checking
     if (data.isHD && data.isVideo) {
       hdVideosToCheck.push({ url, data });
       continue;
     }
-    
+
     // Filter based on type
-    const shouldInclude = 
+    const shouldInclude =
       (type === 'saveImages' && !data.isVideo) ||
       (type === 'saveVideos' && data.isVideo) ||
       (type === 'saveBoth');
-    
+
     if (shouldInclude) {
       media.push({ url: data.url, filename: data.filename });
     }
   }
-  
+
   // Now check HD videos asynchronously (after main collection)
   console.log(`Checking ${hdVideosToCheck.length} HD videos...`);
   let hdCheckedCount = 0;
-  
+
   for (const { url, data } of hdVideosToCheck) {
     // Check for cancellation
     if (ProgressModal.isCancelled()) {
       console.log('HD check cancelled by user');
       throw new Error('Operation cancelled by user');
     }
-    
+
     const hdExists = await checkVideoExists(url);
     if (hdExists) {
-      const shouldInclude = 
+      const shouldInclude =
         (type === 'saveVideos' || type === 'saveBoth');
-      
+
       if (shouldInclude) {
         media.push({ url: data.url, filename: data.filename });
       }
     }
-    
+
     hdCheckedCount++;
     const checkProgress = 70 + ((hdCheckedCount / hdVideosToCheck.length) * 15);
     ProgressModal.update(checkProgress, `Checked ${hdCheckedCount}/${hdVideosToCheck.length} HD videos...`);
   }
-  
+
   console.log(`Total media collected: ${allMediaData.size}, After filtering: ${media.length}`);
   ProgressModal.update(85, `Filtered to ${media.length} items...`);
-  
+
   // Scroll back to top
   console.log('Scrolling back to top');
   ProgressModal.update(90, 'Scrolling back to top...');
   scrollContainer.scrollTop = 0;
   await new Promise(resolve => setTimeout(resolve, 500));
-  
+
   console.log(`Finished! Total media to download: ${media.length}`);
   return media;
 }
@@ -1067,25 +1067,25 @@ async function scrollAndCollectMedia(type) {
  */
 async function collectMediaFromVisibleCards(type, media, seen, currentIndex = 0, totalCards = 0) {
   const cards = document.querySelectorAll(SELECTORS.CARD);
-  
+
   for (const card of cards) {
     let imageName = null;
-    
+
     // Extract image
     const img = card.querySelector(SELECTORS.IMAGE);
     if (img && img.src) {
-      const url = img.src.split('?')[0];
+      const url = img.src.split('?')[0].replace(/\/cdn-cgi\/image\/[^\/]*\//, '/');
       const filename = determineFilename(url, null, false);
       imageName = extractBaseName(url);
 
-      if ((type === 'saveImages' || type === 'saveBoth') && 
-          !seen.has(url) && 
-          isValidUrl(url, URL_PATTERNS.IMAGE)) {
+      if ((type === 'saveImages' || type === 'saveBoth') &&
+        !seen.has(url) &&
+        isValidUrl(url, URL_PATTERNS.IMAGE)) {
         seen.add(url);
         media.push({ url: img.src, filename });
       }
     }
-    
+
     // Extract video
     if (type === 'saveVideos' || type === 'saveBoth' || shouldUpscale) {
       const video = card.querySelector(SELECTORS.VIDEO);
@@ -1093,17 +1093,17 @@ async function collectMediaFromVisibleCards(type, media, seen, currentIndex = 0,
         const url = video.src.split('?')[0];
         if (!seen.has(url)) {
           seen.add(url);
-          
+
           const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
           const filename = (imageName && uuidRe.test(imageName)) ? `${imageName}.mp4` : determineFilename(url, imageName || null, true);
 
           media.push({ url: video.src, filename });
-          
+
           // Check for HD version
           if (url.includes('generated_video.mp4')) {
             const hdUrl = video.src.replace('generated_video.mp4', 'generated_video_hd.mp4');
             const hdFilename = filename.replace(/(\.[^.]+)$/, '-HD$1');
-            
+
             if (!seen.has(hdUrl)) {
               const hdExists = await checkVideoExists(hdUrl);
               if (hdExists) {
@@ -1123,18 +1123,18 @@ async function collectMediaFromVisibleCards(type, media, seen, currentIndex = 0,
  */
 async function handleUpscale() {
   console.log('Starting handleUpscale');
-  
+
   // Check if we're on the favorites page
   const cards = document.querySelectorAll(SELECTORS.CARD);
   if (cards.length === 0) {
     throw new Error('No media cards found. Make sure you are on the favorites page.');
   }
-  
+
   ProgressModal.show('Upscaling Videos', 'This may take several minutes...');
-  
+
   // Scroll and collect videos to upscale
   const videosToUpscale = await scrollAndCollectVideosForUpscale();
-  
+
   if (videosToUpscale.length === 0) {
     ProgressModal.hide();
     const shouldRefresh = confirm('No videos found that need upscaling.\n\nClick OK to refresh the page.');
@@ -1143,13 +1143,13 @@ async function handleUpscale() {
     }
     return;
   }
-  
+
   ProgressModal.update(10, `Found ${videosToUpscale.length} videos to upscale`);
-  
+
   let successCount = 0;
   let skipCount = 0;
   const STAGGER_DELAY = 300; // 300ms delay between requests
-  
+
   // Start all upscale requests with staggered delays
   const upscalePromises = [];
   for (let i = 0; i < videosToUpscale.length; i++) {
@@ -1163,23 +1163,23 @@ async function handleUpscale() {
       }
       return;
     }
-    
+
     const videoId = videosToUpscale[i];
     const videoIndex = i + 1;
-    
+
     // Create a promise that delays, then makes the request
     const upscalePromise = (async () => {
       // Stagger the request
       await new Promise(resolve => setTimeout(resolve, i * STAGGER_DELAY));
-      
+
       // Check for cancellation before making the request
       if (ProgressModal.isCancelled()) {
         return { success: false, cancelled: true };
       }
-      
+
       const progress = 10 + ((videoIndex / videosToUpscale.length) * 90);
       ProgressModal.update(progress, `Requesting upscale ${videoIndex}/${videosToUpscale.length}...`);
-      
+
       const upscaled = await upscaleVideo(videoId);
       if (upscaled) {
         successCount++;
@@ -1191,13 +1191,13 @@ async function handleUpscale() {
         return { success: false, cancelled: false };
       }
     })();
-    
+
     upscalePromises.push(upscalePromise);
   }
-  
+
   // Wait for all requests to complete
   await Promise.all(upscalePromises);
-  
+
   // Final check for cancellation
   if (ProgressModal.isCancelled()) {
     ProgressModal.hide();
@@ -1207,7 +1207,7 @@ async function handleUpscale() {
     }
     return;
   }
-  
+
   ProgressModal.hide();
   const shouldRefresh = confirm(`Finished! Successfully requested upscale for ${successCount} videos${skipCount > 0 ? `, ${skipCount} failed` : ''}.\n\nUpscaling will complete in the background.\n\nClick OK to refresh the page now (required before next operation).`);
   chrome.storage.local.set({ activeOperation: false });
@@ -1222,35 +1222,35 @@ async function handleUpscale() {
  */
 async function handleSave(type) {
   console.log(`Starting handleSave with type: ${type}`);
-  
+
   // Check if we're on the favorites page
   const cards = document.querySelectorAll(SELECTORS.CARD);
   if (cards.length === 0) {
     throw new Error('No media cards found. Make sure you are on the favorites page.');
   }
-  
+
   // Show progress modal and scroll to collect all media
   ProgressModal.show('Collecting Favorites', 'Scrolling to load all items...');
   const media = await scrollAndCollectMedia(type);
-  
+
   if (media.length === 0) {
     ProgressModal.hide();
     throw new Error('No media found matching the selected criteria.');
   }
-  
+
   ProgressModal.update(100, `Found ${media.length} items to download`);
-  
+
   // Hide modal and show refresh prompt BEFORE sending download message
   ProgressModal.hide();
-  
+
   const shouldRefresh = confirm(`Ready to download ${media.length} items!\n\nDownloads will start after you close this dialog. Check extension popup for progress.\n\nClick OK to refresh the page now, or Cancel to stay (refresh required before next operation).`);
-  
+
   // Send to background script for download
-  chrome.runtime.sendMessage({ 
-    action: 'startDownloads', 
-    media 
+  chrome.runtime.sendMessage({
+    action: 'startDownloads',
+    media
   });
-  
+
   if (shouldRefresh) {
     window.location.reload();
   }
@@ -1261,12 +1261,12 @@ async function handleSave(type) {
  */
 async function handleUnsaveAll() {
   ProgressModal.show('Unfavoriting All Items', 'Collecting all media...');
-  
+
   // Collect ALL media just like download does
   const allMedia = await scrollAndCollectMedia('saveBoth');
-  
+
   console.log(`Collected ${allMedia.length} total media files`);
-  
+
   // Extract unique post IDs from IMAGE URLs only (post ID = image UUID, not video UUID)
   // For older posts, videos have different UUIDs than their images
   // URL patterns:
@@ -1278,7 +1278,7 @@ async function handleUnsaveAll() {
     // Only extract UUID from image URLs (skip videos)
     if (!item.url.includes('generated_video')) {
       let postId = null;
-      
+
       // Try pattern 1 & 2: UUID before /content or /preview_image.jpg
       let match = item.url.match(/\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/(content|preview_image\.jpg)/i);
       if (match && match[1]) {
@@ -1290,7 +1290,7 @@ async function handleUnsaveAll() {
           postId = match[1];
         }
       }
-      
+
       if (postId) {
         console.log(`Found image URL: ${item.url} -> Post ID: ${postId}`);
         postIdsSet.add(postId);
@@ -1299,10 +1299,10 @@ async function handleUnsaveAll() {
       }
     }
   }
-  
+
   const postIds = Array.from(postIdsSet);
   console.log(`Found ${postIds.length} unique posts to unfavorite:`, postIds);
-  
+
   if (postIds.length === 0) {
     ProgressModal.hide();
     const shouldRefresh = confirm('No items found.\n\nClick OK to refresh the page.');
@@ -1311,13 +1311,13 @@ async function handleUnsaveAll() {
     }
     return;
   }
-  
+
   const estimatedTime = Math.ceil(postIds.length * TIMING.UNFAVORITE_DELAY / 1000);
   ProgressModal.update(0, `Found ${postIds.length} items. Starting unfavorite process (${estimatedTime}s)...`);
-  
+
   let successCount = 0;
   let failCount = 0;
-  
+
   for (let i = 0; i < postIds.length; i++) {
     // Check for cancellation
     if (ProgressModal.isCancelled()) {
@@ -1329,7 +1329,7 @@ async function handleUnsaveAll() {
       }
       return;
     }
-    
+
     try {
       const success = await unlikePost(postIds[i]);
       if (success) {
@@ -1339,10 +1339,10 @@ async function handleUnsaveAll() {
         failCount++;
         console.warn(`Failed to unfavorite item ${i + 1}`);
       }
-      
+
       const progress = ((i + 1) / postIds.length) * 100;
       ProgressModal.update(progress, `Unfavorited ${successCount} of ${postIds.length} items`);
-      
+
       // Small delay between requests
       await new Promise(resolve => setTimeout(resolve, TIMING.UNFAVORITE_DELAY));
     } catch (error) {
@@ -1350,7 +1350,7 @@ async function handleUnsaveAll() {
       console.error(`Failed to unfavorite item ${i + 1}:`, error);
     }
   }
-  
+
   ProgressModal.hide();
   const shouldRefresh = confirm(`Finished! Successfully unfavorited ${successCount} items${failCount > 0 ? `, ${failCount} failed` : ''}.\n\nClick OK to refresh the page now (required to see changes and before next operation).`);
   if (shouldRefresh) {
