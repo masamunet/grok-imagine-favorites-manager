@@ -381,8 +381,42 @@ function determineFilename(url, fallbackBase = null, isVideo = false) {
  */
 function extractPostId(imgSrc) {
   try {
-    const match = imgSrc.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+    const match = imgSrc.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
     return match ? match[1] : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Robustly extracts Post ID (UUID) from a media card element.
+ * Prioritizes links (<a>) and then image sources.
+ * @param {HTMLElement} element - The card or list item element
+ * @returns {string|null} The UUID if found, otherwise null
+ */
+function extractPostIdFromElement(element) {
+  try {
+    // 1. Check direct links within the card (highest priority)
+    const links = element.querySelectorAll('a[href*="/post/"], a[href*="/status/"]');
+    for (const link of links) {
+      const match = link.href.match(/\/(?:post|status)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+      if (match) return match[1].toLowerCase();
+    }
+
+    // 2. Fallback to image source
+    const img = element.querySelector(SELECTORS.IMAGE);
+    if (img && img.src) {
+      const id = extractPostId(img.src);
+      if (id) return id.toLowerCase();
+    }
+
+    // 3. Fallback to any UUID in the text or attributes
+    const listItem = element.closest(SELECTORS.LIST_ITEM) || element;
+    const text = listItem.innerText || "";
+    const uuidMatch = text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+    if (uuidMatch) return uuidMatch[0].toLowerCase();
+
+    return null;
   } catch (e) {
     return null;
   }
@@ -396,6 +430,39 @@ function extractPostId(imgSrc) {
 function extractBaseName(url) {
   const filename = url.substring(url.lastIndexOf('/') + 1);
   return filename.replace(/\.(png|jpg|jpeg)$/i, '');
+}
+
+/**
+ * Generates a unique filename using Post ID and URL hash if necessary.
+ * @param {string} url - The media URL
+ * @param {string|null} postId - The extracted Post ID
+ * @param {boolean} isVideo - Whether the media is a video
+ * @returns {string} A unique filename
+ */
+function generateUniqueFilename(url, postId, isVideo) {
+  const ext = isVideo ? '.mp4' : '.jpg';
+  
+  if (postId) {
+    return `${postId}${ext}`;
+  }
+  
+  // If no Post ID, use a hash of the URL to ensure stability across scrolls
+  const urlWithoutParams = url.split('?')[0];
+  const hash = simpleHash(urlWithoutParams);
+  const base = extractBaseName(urlWithoutParams) || 'media';
+  
+  return `${base}_${hash}${ext}`;
+}
+
+/**
+ * A simple string hashing function (DJB2) for stable filenames
+ */
+function simpleHash(str) {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash) + str.charCodeAt(i);
+  }
+  return (hash >>> 0).toString(16);
 }
 
 /**
@@ -924,49 +991,41 @@ async function scrollAndCollectMedia(type) {
     const cards = document.querySelectorAll(SELECTORS.CARD);
 
     for (const card of cards) {
-      let imageName = null;
+      const postId = extractPostIdFromElement(card);
+      
+      // 1. Process Image
+      if (type === 'saveImages' || type === 'saveBoth') {
+        const img = card.querySelector(SELECTORS.IMAGE);
+        if (img && img.src) {
+          let imageUrl = img.src.split('?')[0].replace(/\/cdn-cgi\/image\/[^\/]*\//, '/');
+          if (postId) {
+            imageUrl = `https://imagine-public.x.ai/imagine-public/images/${postId}.jpg?cache=1&dl=1`;
+          }
 
-      // Extract image
-      const img = card.querySelector(SELECTORS.IMAGE);
-      if (img && img.src) {
-        let url = img.src.split('?')[0].replace(/\/cdn-cgi\/image\/[^\/]*\//, '/');
-        const postId = extractPostId(img.src);
-
-        if (postId) {
-          // Construct high-quality download URL as per user request
-          url = `https://imagine-public.x.ai/imagine-public/images/${postId}.jpg?cache=1&dl=1`;
-        }
-
-        if (isValidUrl(url, URL_PATTERNS.IMAGE) || postId) {
-          const filename = determineFilename(url, postId, false);
-          imageName = postId || extractBaseName(url);
-
-          // Store image data
-          if (!allMediaData.has(url)) {
-            allMediaData.set(url, { url: url, filename, isVideo: false, isHD: false });
+          if (!allMediaData.has(imageUrl)) {
+            const filename = generateUniqueFilename(imageUrl, postId, false);
+            allMediaData.set(imageUrl, { url: imageUrl, filename, isVideo: false, isHD: false });
           }
         }
       }
 
-      // Extract video
-      const video = card.querySelector(SELECTORS.VIDEO);
-      if (video && video.src) {
-        const url = video.src.split('?')[0];
+      // 2. Process Video
+      if (type === 'saveVideos' || type === 'saveBoth') {
+        const video = card.querySelector(SELECTORS.VIDEO);
+        if (video && video.src) {
+          const videoUrl = video.src.split('?')[0];
+          
+          if (!allMediaData.has(videoUrl)) {
+            const filename = generateUniqueFilename(videoUrl, postId, true);
+            allMediaData.set(videoUrl, { url: videoUrl, filename, isVideo: true, isHD: false });
 
-        if (!allMediaData.has(url)) {
-          const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-          const filename = (imageName && uuidRe.test(imageName)) ? `${imageName}.mp4` : determineFilename(url, imageName || null, true);
-
-          // Store video data
-          allMediaData.set(url, { url: video.src, filename, isVideo: true, isHD: false });
-
-          // Also track potential HD version URL
-          if (url.includes('generated_video.mp4')) {
-            const hdUrl = video.src.replace('generated_video.mp4', 'generated_video_hd.mp4');
-            const hdFilename = filename.replace(/(\.[^.]+)$/, '-HD$1');
-
-            if (!allMediaData.has(hdUrl)) {
-              allMediaData.set(hdUrl, { url: hdUrl, filename: hdFilename, isVideo: true, isHD: true });
+            // Also check for HD version
+            if (videoUrl.includes('generated_video.mp4')) {
+              const hdUrl = videoUrl.replace('generated_video.mp4', 'generated_video_hd.mp4');
+              const hdFilename = filename.replace(/(\.[^.]+)$/, '-HD$1');
+              if (!allMediaData.has(hdUrl)) {
+                allMediaData.set(hdUrl, { url: hdUrl, filename: hdFilename, isVideo: true, isHD: true });
+              }
             }
           }
         }
@@ -1024,34 +1083,50 @@ async function scrollAndCollectMedia(type) {
     }
   }
 
-  // Now check HD videos asynchronously (after main collection)
   console.log(`Checking ${hdVideosToCheck.length} HD videos...`);
   let hdCheckedCount = 0;
 
   for (const { url, data } of hdVideosToCheck) {
-    // Check for cancellation
     if (ProgressModal.isCancelled()) {
       console.log('HD check cancelled by user');
       throw new Error('Operation cancelled by user');
     }
 
-    const hdExists = await checkVideoExists(url);
+    const hdExists = await checkVideoExistsHTTP(url); // Use the faster HTTP check
     if (hdExists) {
-      const shouldInclude =
-        (type === 'saveVideos' || type === 'saveBoth');
-
-      if (shouldInclude) {
-        media.push({ url: data.url, filename: data.filename });
+      if (type === 'saveVideos' || type === 'saveBoth') {
+        allMediaData.set(url, { url, filename: data.filename, isVideo: true });
       }
     }
 
     hdCheckedCount++;
     const checkProgress = 70 + ((hdCheckedCount / hdVideosToCheck.length) * 15);
-    ProgressModal.update(checkProgress, `Checked ${hdCheckedCount}/${hdVideosToCheck.length} HD videos...`);
+    ProgressModal.update(checkProgress, `Checking HD videos: ${hdCheckedCount}/${hdVideosToCheck.length}`);
   }
 
-  console.log(`Total media collected: ${allMediaData.size}, After filtering: ${media.length}`);
-  ProgressModal.update(85, `Filtered to ${media.length} items...`);
+  // Final Step: Prepare uniquely named media array
+  const media = [];
+  const usedFilenames = new Map(); // filename -> count
+
+  for (const [url, data] of allMediaData) {
+    let finalFilename = data.filename;
+    
+    if (usedFilenames.has(finalFilename)) {
+      const count = usedFilenames.get(finalFilename) + 1;
+      usedFilenames.set(finalFilename, count);
+      
+      const extIdx = finalFilename.lastIndexOf('.'); // Find last dot
+      const base = finalFilename.substring(0, extIdx);
+      const ext = finalFilename.substring(extIdx);
+      finalFilename = `${base}_${count}${ext}`;
+    } else {
+      usedFilenames.set(finalFilename, 1);
+    }
+
+    media.push({ url, filename: finalFilename });
+  }
+
+  ProgressModal.update(85, `Ready to download ${media.length} items`);
 
   // Scroll back to top
   console.log('Scrolling back to top');
@@ -1061,67 +1136,6 @@ async function scrollAndCollectMedia(type) {
 
   console.log(`Finished! Total media to download: ${media.length}`);
   return media;
-}
-
-/**
- * Collects media from currently loaded cards
- * @param {string} type - Type of download
- * @param {Array} media - Array to add media to
- * @param {Set} seen - Set of already seen URLs
- * @param {number} currentIndex - Current card index for progress
- * @param {number} totalCards - Total cards for progress
- */
-async function collectMediaFromVisibleCards(type, media, seen, currentIndex = 0, totalCards = 0) {
-  const cards = document.querySelectorAll(SELECTORS.CARD);
-
-  for (const card of cards) {
-    let imageName = null;
-
-    // Extract image
-    const img = card.querySelector(SELECTORS.IMAGE);
-    if (img && img.src) {
-      const url = img.src.split('?')[0].replace(/\/cdn-cgi\/image\/[^\/]*\//, '/');
-      const filename = determineFilename(url, null, false);
-      imageName = extractBaseName(url);
-
-      if ((type === 'saveImages' || type === 'saveBoth') &&
-        !seen.has(url) &&
-        isValidUrl(url, URL_PATTERNS.IMAGE)) {
-        seen.add(url);
-        media.push({ url: img.src, filename });
-      }
-    }
-
-    // Extract video
-    if (type === 'saveVideos' || type === 'saveBoth' || shouldUpscale) {
-      const video = card.querySelector(SELECTORS.VIDEO);
-      if (video && video.src) {
-        const url = video.src.split('?')[0];
-        if (!seen.has(url)) {
-          seen.add(url);
-
-          const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-          const filename = (imageName && uuidRe.test(imageName)) ? `${imageName}.mp4` : determineFilename(url, imageName || null, true);
-
-          media.push({ url: video.src, filename });
-
-          // Check for HD version
-          if (url.includes('generated_video.mp4')) {
-            const hdUrl = video.src.replace('generated_video.mp4', 'generated_video_hd.mp4');
-            const hdFilename = filename.replace(/(\.[^.]+)$/, '-HD$1');
-
-            if (!seen.has(hdUrl)) {
-              const hdExists = await checkVideoExists(hdUrl);
-              if (hdExists) {
-                seen.add(hdUrl);
-                media.push({ url: hdUrl, filename: hdFilename });
-              }
-            }
-          }
-        }
-      }
-    }
-  }
 }
 
 /**
