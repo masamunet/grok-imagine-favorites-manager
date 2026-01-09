@@ -14,7 +14,7 @@ const SELECTORS = {
 };
 
 const URL_PATTERNS = {
-  IMAGE: ['imagine-public.x.ai', 'grok.com']
+  IMAGE: ['imagine-public.x.ai', 'assets.grok.com', 'grok.com']
 };
 
 const TIMING = {
@@ -1025,7 +1025,7 @@ async function scrollAndCollectMedia(type) {
 
       // 2. Process Image
       if (type === 'saveImages' || type === 'saveBoth') {
-        const img = card.querySelector(SELECTORS.IMAGE);
+        const img = card.querySelector(SELECTORS.IMAGE) || card.querySelector('img');
         if (img && img.src) {
           const postIdFromImg = extractPostId(img.src);
           const originalUrl = img.src.split('?')[0].replace(/\/cdn-cgi\/image\/[^\/]*\//, '/');
