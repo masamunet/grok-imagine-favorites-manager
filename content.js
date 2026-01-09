@@ -239,12 +239,14 @@ const ProgressModal = {
   cancel() {
     this.cancelled = true;
     this.update(0, 'Cancelling operation...');
-    document.getElementById('grok-cancel-button').textContent = 'Cancelling...';
-    document.getElementById('grok-cancel-button').disabled = true;
-    document.getElementById('grok-cancel-button').style.opacity = '0.5';
-    document.getElementById('grok-cancel-button').style.cursor = 'not-allowed';
+    const cancelBtn = document.getElementById('grok-cancel-button');
+    if (cancelBtn) {
+      cancelBtn.textContent = 'Cancelling...';
+      cancelBtn.disabled = true;
+      cancelBtn.style.opacity = '0.5';
+    }
 
-    // Remove modal after a short delay
+    // Ensure the modal is removed after a short delay
     setTimeout(() => {
       this.remove();
     }, 1000);
@@ -385,21 +387,23 @@ function determineFilename(url, fallbackBase = null, isVideo = false) {
  * @returns {string|null}
  */
 function extractPostId(imgSrc) {
+  if (!imgSrc) return null;
   try {
-    // Pattern 1: .../generated/{UUID}/...
-    const genMatch = imgSrc.match(/\/generated\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
-    if (genMatch) return genMatch[1];
+    // Priority: Explicit generation/post paths
+    const patterns = [
+      /\/generated\/([0-9a-f-]{36})/i,
+      /\/post\/([0-9a-f-]{36})/i,
+      /\/users\/[0-9a-f-]{36}\/([0-9a-f-]{36})/i
+    ];
 
-    // Pattern 2: .../post/{UUID}
-    const postMatch = imgSrc.match(/\/post\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
-    if (postMatch) return postMatch[1];
+    for (const pattern of patterns) {
+      const match = imgSrc.match(pattern);
+      if (match && match[1]) return match[1].toLowerCase();
+    }
 
-    // Pattern 3: assets.grok.com content path (id follows userId)
-    // format: .../users/{userId}/{postId}/content
-    const contentMatch = imgSrc.match(/\/users\/[0-9a-f-]{36}\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
-    if (contentMatch) return contentMatch[1];
-    
-    return null;
+    // Fallback: Last UUID in path
+    const uuids = imgSrc.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi);
+    return uuids ? uuids[uuids.length - 1].toLowerCase() : null;
   } catch (e) {
     return null;
   }
@@ -1018,45 +1022,50 @@ async function scrollAndCollectMedia(type) {
     for (const card of cards) {
       const postId = extractPostIdFromElement(card);
       
-      // 1. Process Image (Only if image element exists)
-      if (type === 'saveImages' || type === 'saveBoth') {
-        const img = card.querySelector(SELECTORS.IMAGE);
-        if (img && img.src) {
-          const postIdFromImg = extractPostId(img.src);
-          // Only use HQ URL if we found a Post ID directly in the image source
-          // This prevents XML downloads for non-generation assets
-          let imageUrl = img.src.split('?')[0].replace(/\/cdn-cgi\/image\/[^\/]*\//, '/');
-          let effectivePostId = postIdFromImg;
-
-          if (postIdFromImg) {
-            imageUrl = `https://imagine-public.x.ai/imagine-public/images/${postIdFromImg}.jpg?cache=1&dl=1`;
-          } else if (postId) {
-            // If card has a Post ID but image doesn't, it might be a thumbnail for a non-image gen.
-            // In this case, we prefer the original image URL unless it's clearly a preview.
-            effectivePostId = postId;
-          }
-
-          if (isValidUrl(imageUrl, URL_PATTERNS.IMAGE)) {
-            // Filter out previews IF we don't have a reliable generation Post ID
-            const isPreview = imageUrl.includes('preview_image') || imageUrl.includes('thumbnail');
-            if (isPreview && !postIdFromImg) {
-              console.log('Skipping speculative preview download:', imageUrl);
-            } else if (!allMediaData.has(imageUrl)) {
-              const filename = generateUniqueFilename(imageUrl, effectivePostId, false);
-              allMediaData.set(imageUrl, { url: imageUrl, filename, isVideo: false });
-            }
+      // 1. Process Video (Do this first to identify video-only/video-dominant cards)
+      let hasVideoInCard = false;
+      let videoId = null;
+      if (type === 'saveVideos' || type === 'saveBoth') {
+        const video = card.querySelector(SELECTORS.VIDEO);
+        if (video && video.src) {
+          hasVideoInCard = true;
+          const videoUrl = video.src.split('?')[0];
+          videoId = extractPostId(videoUrl);
+          
+          if (!allMediaData.has(videoUrl) && isValidUrl(videoUrl, URL_PATTERNS.IMAGE)) {
+            const filename = generateUniqueFilename(videoUrl, postId || videoId, true);
+            allMediaData.set(videoUrl, { url: videoUrl, filename: filename, isVideo: true });
           }
         }
       }
 
-      // 2. Process Video (Only if video element exists)
-      if (type === 'saveVideos' || type === 'saveBoth') {
-        const video = card.querySelector(SELECTORS.VIDEO);
-        if (video && video.src) {
-          const videoUrl = video.src.split('?')[0];
-          if (!allMediaData.has(videoUrl) && isValidUrl(videoUrl, URL_PATTERNS.IMAGE)) {
-            const filename = generateUniqueFilename(videoUrl, postId, true);
-            allMediaData.set(videoUrl, { url: videoUrl, filename: filename, isVideo: true });
+      // 2. Process Image
+      if (type === 'saveImages' || type === 'saveBoth') {
+        const img = card.querySelector(SELECTORS.IMAGE);
+        if (img && img.src) {
+          const postIdFromImg = extractPostId(img.src);
+          
+          // Use the most reliable ID: Card Link ID > Image Src ID > videoId
+          const effectivePostId = postId || postIdFromImg || (hasVideoInCard ? videoId : null);
+          
+          // Construct HQ URL
+          let imageUrl = img.src.split('?')[0].replace(/\/cdn-cgi\/image\/[^\/]*\//, '/');
+          if (effectivePostId) {
+            imageUrl = `https://imagine-public.x.ai/imagine-public/images/${effectivePostId}.jpg?cache=1&dl=1`;
+          }
+
+          if (isValidUrl(imageUrl, URL_PATTERNS.IMAGE)) {
+            const isPreview = imageUrl.includes('preview_image') || imageUrl.includes('thumbnail');
+            
+            // SKIP condition: 
+            // - If it's a preview AND we already have a video in this card, AND the ID is the same
+            // This prevents downloading a speculative 404 JPG for a video generation.
+            if (hasVideoInCard && isPreview && (effectivePostId === videoId || !postId)) {
+               console.log('Skipping video preview as redundant:', imageUrl);
+            } else if (!allMediaData.has(imageUrl)) {
+              const filename = generateUniqueFilename(imageUrl, effectivePostId, false);
+              allMediaData.set(imageUrl, { url: imageUrl, filename, isVideo: false });
+            }
           }
         }
       }
@@ -1233,33 +1242,39 @@ async function handleUpscale() {
 async function handleSave(type) {
   console.log(`Starting handleSave with type: ${type}`);
 
-  // Check if we're on the favorites page
-  const cards = document.querySelectorAll(SELECTORS.CARD);
-  if (cards.length === 0) {
-    throw new Error('No media cards found. Make sure you are on the favorites page.');
+  try {
+    // Check if we're on the favorites page
+    const cards = document.querySelectorAll(SELECTORS.CARD);
+    if (cards.length === 0) {
+      throw new Error('No media cards found. Make sure you are on the favorites page.');
+    }
+
+    // Show progress modal and scroll to collect all media
+    ProgressModal.show('Collecting Favorites', 'Scrolling to load all items...');
+    const media = await scrollAndCollectMedia(type);
+
+    if (media.length === 0) {
+      throw new Error('No media found matching the selected criteria.');
+    }
+
+    ProgressModal.update(100, `Found ${media.length} items to download`);
+
+    // Send to background script for download
+    chrome.runtime.sendMessage({
+      action: 'startDownloads',
+      media
+    });
+  } catch (error) {
+    if (error.message !== 'Operation cancelled by user') {
+      alert(`Error: ${error.message}`);
+    }
+    console.error('handleSave error:', error);
+  } finally {
+    // Ensure the modal is removed after starting or failing
+    setTimeout(() => {
+      ProgressModal.remove();
+    }, 2000);
   }
-
-  // Show progress modal and scroll to collect all media
-  ProgressModal.show('Collecting Favorites', 'Scrolling to load all items...');
-  const media = await scrollAndCollectMedia(type);
-
-  if (media.length === 0) {
-    ProgressModal.hide();
-    throw new Error('No media found matching the selected criteria.');
-  }
-
-  ProgressModal.update(100, `Found ${media.length} items to download`);
-
-  // Send to background script for download
-  chrome.runtime.sendMessage({
-    action: 'startDownloads',
-    media
-  });
-
-  // Automatically close progress modal after starting downloads
-  setTimeout(() => {
-    ProgressModal.remove();
-  }, 2000);
 }
 
 /**
