@@ -1034,31 +1034,18 @@ async function scrollAndCollectMedia(type) {
           const effectivePostId = postId || postIdFromImg || (hasVideoInCard ? videoId : null);
           
           let imageUrl = originalUrl;
-          let isHQ = false;
-
-          // Attempt HQ URL if we have an ID
           if (effectivePostId) {
-            const hqCandidate = `https://imagine-public.x.ai/imagine-public/images/${effectivePostId}.jpg?cache=1&dl=1`;
-            const isPreview = originalUrl.includes('preview_image') || originalUrl.includes('thumbnail');
-            
-            // SKIP condition for video content
-            if (hasVideoInCard && isPreview) {
-               // Video cards have images that are just thumbnails. 
-               // These often don't have HQ versions at imagine-public.x.ai, causing 404s.
-               console.log('Skipping video thumbnail to prevent 404:', hqCandidate);
-               imageUrl = null; 
-            } else {
-               // For standalone images or non-thumbnail image generations, use the HQ URL directly.
-               // We removed the fetch() check because it's unreliable due to CORS inside the content script.
-               imageUrl = hqCandidate;
-               isHQ = true;
-            }
+            // Always target the high-quality URL if we have an ID.
+            // We don't do pre-checks (fetch) here anymore because CORS blocks them in content scripts
+            // and it was causing valid images to be skipped.
+            imageUrl = `https://imagine-public.x.ai/imagine-public/images/${effectivePostId}.jpg?cache=1&dl=1`;
           }
 
-          if (imageUrl && isValidUrl(imageUrl, URL_PATTERNS.IMAGE)) {
+          if (isValidUrl(imageUrl, URL_PATTERNS.IMAGE)) {
             if (!allMediaData.has(imageUrl)) {
               const filename = generateUniqueFilename(imageUrl, effectivePostId, false);
               allMediaData.set(imageUrl, { url: imageUrl, filename, isVideo: false });
+              console.log(`Collected image: ${imageUrl}`);
             }
           }
         }
