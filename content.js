@@ -1025,30 +1025,35 @@ async function scrollAndCollectMedia(type) {
 
       // 2. Process Image
       if (type === 'saveImages' || type === 'saveBoth') {
-        const img = card.querySelector(SELECTORS.IMAGE) || card.querySelector('img');
+        const img = card.querySelector(SELECTORS.IMAGE);
         if (img && img.src) {
           const originalUrl = img.src.split('?')[0].replace(/\/cdn-cgi\/image\/[^\/]*\//, '/');
           
-          // CRITICAL: Extract ID from the IMAGE source itself, not from the card link.
-          // This is because the asset ID can be different from the post ID.
-          const assetId = extractPostId(originalUrl);
+          // Use Case 1: Real Generative Image + (Optional) Video
+          // The Post ID (from card link) is the most reliable key for the High-Quality bucket for images.
+          const effectivePostId = postId || extractPostId(originalUrl);
           
           let imageUrl = originalUrl;
-          if (assetId) {
-            // If the image has its own UUID, it's a high-quality candidate.
-            imageUrl = `https://imagine-public.x.ai/imagine-public/images/${assetId}.jpg?cache=1&dl=1`;
+          if (effectivePostId) {
+            const isPreview = originalUrl.includes('preview_image') || originalUrl.includes('thumbnail');
             
-            if (isValidUrl(imageUrl, URL_PATTERNS.IMAGE)) {
-              if (!allMediaData.has(imageUrl)) {
-                // Use card Post ID (if available) as the filename prefix for context, 
-                // but the URL is derived from the assetId.
-                const filename = generateUniqueFilename(imageUrl, postId || assetId, false);
-                allMediaData.set(imageUrl, { url: imageUrl, filename, isVideo: false });
-                console.log(`Collected high-quality image derived from asset ID: ${imageUrl}`);
-              }
+            // CRITICAL: Skip if it's just a cover for a video and not a standalone image gem
+            if (hasVideoInCard && isPreview) {
+               console.log('Skipping video preview image to prevent 404:', originalUrl);
+               imageUrl = null;
+            } else {
+               // Use Post ID for high-quality. Historically, imagine-public.x.ai works with the Post ID.
+               imageUrl = `https://imagine-public.x.ai/imagine-public/images/${effectivePostId}.jpg?cache=1&dl=1`;
             }
-          } else {
-            console.log(`Skipping image as it has no valid asset UUID (likely a low-res preview or UI element): ${originalUrl}`);
+          }
+
+          if (imageUrl && isValidUrl(imageUrl, URL_PATTERNS.IMAGE)) {
+            if (!allMediaData.has(imageUrl)) {
+              // We use effectivePostId for name context
+              const filename = generateUniqueFilename(imageUrl, effectivePostId, false);
+              allMediaData.set(imageUrl, { url: imageUrl, filename, isVideo: false });
+              console.log(`Collected image (target HQ): ${imageUrl}`);
+            }
           }
         }
       }
