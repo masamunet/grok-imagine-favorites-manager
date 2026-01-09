@@ -381,8 +381,22 @@ function determineFilename(url, fallbackBase = null, isVideo = false) {
  */
 function extractPostId(imgSrc) {
   try {
-    const match = imgSrc.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
-    return match ? match[1] : null;
+    // Look for the ID after specific keywords like 'generated' or 'post', or as the last UUID in the path
+    // Pattern 1: .../generated/{UUID}/...
+    const genMatch = imgSrc.match(/\/generated\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+    if (genMatch) return genMatch[1];
+
+    // Pattern 2: .../post/{UUID}
+    const postMatch = imgSrc.match(/\/post\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+    if (postMatch) return postMatch[1];
+
+    // Pattern 3: The last UUID in a path (often the asset ID, not the user ID)
+    const allUuids = imgSrc.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi);
+    if (allUuids && allUuids.length > 0) {
+      return allUuids[allUuids.length - 1];
+    }
+    
+    return null;
   } catch (e) {
     return null;
   }
