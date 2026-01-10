@@ -17,15 +17,18 @@ var Api = {
    * Returns a Promise that resolves to an array of media objects [{url, id, type}]
    */
   async requestAnalysis(postId, postUrl) {
+    console.debug(`[Api] Requesting background analysis for: ${postId}`);
     return new Promise((resolve, reject) => {
       chrome.runtime.sendMessage({ action: 'analyzePost', postId, url: postUrl }, response => {
         if (chrome.runtime.lastError) {
+          console.error(`[Api] Runtime error for ${postId}:`, chrome.runtime.lastError);
           return reject(chrome.runtime.lastError);
         }
         if (response && response.success) {
-          // Response data is guaranteed to be an array after background.js update
+          console.debug(`[Api] Analysis response for ${postId}:`, response.data);
           resolve(response.data || []);
         } else {
+          console.error(`[Api] Analysis error for ${postId}:`, response?.error);
           reject(new Error(response?.error || 'Unknown analysis error'));
         }
       });
