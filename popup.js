@@ -98,7 +98,15 @@ function sendAction(action) {
         try {
           await chrome.scripting.executeScript({
             target: { tabId: tab.id },
-            files: ['content.js']
+            files: [
+              'js/constants.js',
+              'js/utils.js',
+              'js/ui.js',
+              'js/classifier.js',
+              'js/api.js',
+              'js/scanner.js',
+              'content.js'
+            ]
           });
           
           // Wait a moment for script to initialize
