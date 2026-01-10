@@ -26,8 +26,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  // Internal log proxy from injected script
+  if (request.action === 'proxyLogInternal') {
+      if (request.senderTabId) {
+          chrome.tabs.sendMessage(request.senderTabId, { 
+              action: 'proxyLog', 
+              message: request.message 
+          }).catch(() => {});
+      }
+      return true;
+  }
+
   if (request.action === 'analyzePost') {
-    analyzePostInTab(request.postId, request.url)
+    const senderTabId = sender.tab ? sender.tab.id : null;
+    analyzePostInTab(request.postId, request.url, senderTabId)
       .then(result => sendResponse({ success: true, data: result }))
       .catch(error => {
         console.error('Analysis error:', error);
@@ -40,7 +52,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 /**
  * Opens a background tab, injects network sniffer, interacts, captures URLs
  */
-async function analyzePostInTab(postId, postUrl) {
+async function analyzePostInTab(postId, postUrl, senderTabId) {
   let tabId = null;
   const collectedMedia = new Set(); // Use Set for uniqueness
 
@@ -55,7 +67,7 @@ async function analyzePostInTab(postId, postUrl) {
         const listener = (tid, changeInfo) => {
             if (tid === tabId && changeInfo.status === 'complete') {
                 chrome.tabs.onUpdated.removeListener(listener);
-                setTimeout(resolve, 1000); 
+                setTimeout(resolve, 500); 
             }
         };
         chrome.tabs.onUpdated.addListener(listener);
@@ -68,13 +80,13 @@ async function analyzePostInTab(postId, postUrl) {
         func: networkSniffer,
         world: 'MAIN'
     });
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, 200));
 
     // --- STEP 1: COLLECT VIDEO ASSETS ---
     const vResults = await chrome.scripting.executeScript({
       target: { tabId },
       func: scrapeAndIntercept,
-      args: ['video']
+      args: ['video', senderTabId]
     });
     if (vResults && vResults[0] && vResults[0].result) {
         vResults[0].result.forEach(u => collectedMedia.add(u));
@@ -85,13 +97,13 @@ async function analyzePostInTab(postId, postUrl) {
       target: { tabId },
       func: switchTab
     });
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 500));
 
     // --- STEP 3: COLLECT IMAGE ASSETS (AND ANY NEW TRAFFIC) ---
     const iResults = await chrome.scripting.executeScript({
         target: { tabId },
         func: scrapeAndIntercept,
-        args: ['image']
+        args: ['image', senderTabId]
     });
     if (iResults && iResults[0] && iResults[0].result) {
         iResults[0].result.forEach(u => collectedMedia.add(u));
@@ -182,44 +194,137 @@ function networkSniffer() {
 /**
  * SCRAPER - Runs in ISOLATED world, clicks button and watches relay
  */
-async function scrapeAndIntercept(mode) {
+async function scrapeAndIntercept(mode, senderTabId) {
     const relay = document.getElementById('grok-sniffer-relay');
-    if (!relay) return [];
+    
+    const log = (msg) => {
+        if (senderTabId) {
+            chrome.runtime.sendMessage({ 
+                action: 'proxyLogInternal', 
+                senderTabId: senderTabId,
+                message: msg 
+            }).catch(() => {});
+        } else {
+            console.log(msg);
+        }
+    };
+
+    if (!relay) {
+        log('[Scraper] Relay not found!');
+        return [];
+    }
 
     // Reset collected urls
     relay.dataset.collectedUrls = '[]';
     
-    // Click DL button
-    const btns = Array.from(document.querySelectorAll('button, a, [role="button"]'));
-    const dlBtn = btns.find(b => {
-        const label = (b.ariaLabel || "").toLowerCase();
-        const text = (b.innerText || "").toLowerCase();
-        const title = (b.title || "").toLowerCase();
-        
-        const isDownload = 
-            label.includes('download') || text.includes('download') || title.includes('download') ||
-            label.includes('ダウンロード') || text.includes('ダウンロード') || title.includes('ダウンロード') ||
-            label.includes('保存') || text.includes('保存') || title.includes('保存');
-            
-        return isDownload && !text.includes('upscale') && !label.includes('upscale');
-    });
+    // Helper to find button
+    const findBtn = () => {
+        const btns = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+        return btns.find(b => {
+            const label = (b.ariaLabel || "").toLowerCase();
+            const text = (b.innerText || "").toLowerCase();
+            const title = (b.title || "").toLowerCase();
+            const isDownload = 
+                label.includes('download') || text.includes('download') || title.includes('download') ||
+                label.includes('ダウンロード') || text.includes('ダウンロード') || title.includes('ダウンロード') ||
+                label.includes('保存') || text.includes('保存') || title.includes('保存');
+            return isDownload && !text.includes('upscale') && !label.includes('upscale');
+        });
+    };
+
+    // 1. Wait for Button (Hydration/Render check) - Max 1.5s
+    let dlBtn = findBtn();
+    if (!dlBtn) {
+        log('[Scraper] Waiting for button...');
+        for (let i = 0; i < 15; i++) { // 100ms * 15 = 1.5s
+            await new Promise(r => setTimeout(r, 100));
+            dlBtn = findBtn();
+            if (dlBtn) break;
+        }
+    }
     
+    let buttonFound = false;
     if (dlBtn) {
-        console.log('[Scraper] Clicking button...');
+        log(`[Scraper] Clicking button for ${mode}...`);
         dlBtn.click();
+        buttonFound = true;
     } else {
-        console.log('[Scraper] No download button found for ' + mode + '. Waiting for passive traffic.');
+        log(`[Scraper] No download button found for ${mode}.`);
     }
 
-    // Wait for traffic to accumulate (passive + active)
-    await new Promise(r => setTimeout(r, 2500));
+    // 2. Wait for Network Idle (Dynamic Exit)
+    // Use Time-based loop to handle background tab throttling (setTimeout becomes 1000ms in inactive tabs)
+    const startTime = Date.now();
+    let firstDiscoveryTime = null;
+    let idleStartTime = null;
+    let lastCount = 0;
     
+    // Max wait 4 seconds (safe wall-clock time)
+    while (Date.now() - startTime < 4000) {
+        // Wait 100ms (or 1000ms if throttled)
+        await new Promise(r => setTimeout(r, 100));
+        
+        // Check current results
+        let currentCount = 0;
+        try {
+            const current = JSON.parse(relay.dataset.collectedUrls || '[]');
+            currentCount = current.length;
+        } catch(e) {}
+
+        const elapsed = Date.now() - startTime;
+
+        // Log occasionally (every ~500ms approx)
+        if (Math.floor(elapsed / 500) > Math.floor((elapsed - 100) / 500)) {
+             log(`[Scraper] Polling ${mode}: ${currentCount} items (${elapsed}ms)`);
+        }
+
+        // If we have items...
+        if (currentCount > 0) {
+            // First time detection
+            if (!firstDiscoveryTime) {
+                firstDiscoveryTime = Date.now();
+                log(`[Scraper] First item detected at ${firstDiscoveryTime - startTime}ms`);
+            }
+
+            // And count hasn't changed since last tick
+            if (currentCount === lastCount) {
+                if (!idleStartTime) idleStartTime = Date.now();
+                
+                const idleDuration = Date.now() - idleStartTime;
+                // If quiet for 600ms, exit
+                if (idleDuration >= 600) {
+                    const totalTime = Date.now() - startTime;
+                    const searchTime = firstDiscoveryTime - startTime;
+                    log(`[Scraper] Idle detected. Exiting. Total: ${totalTime}ms (Search: ${searchTime}ms, IdleWait: ${idleDuration}ms)`);
+                    break;
+                }
+            } else {
+                // Count changed, reset idle timer
+                idleStartTime = null;
+            }
+        } else {
+            // 0 items
+            idleStartTime = null; 
+            
+            // If button was found and 2s passed, timeout early
+            if (buttonFound && elapsed >= 2000) {
+                 log(`[Scraper] 0 items after ${elapsed}ms (Button clicked). Timing out.`);
+                 break;
+            }
+            // If button NOT found, wait shorter (1.5s)
+            if (!buttonFound && elapsed >= 1500) {
+                 log(`[Scraper] 0 items after ${elapsed}ms (No button). Timing out.`);
+                 break;
+            }
+        }
+        lastCount = currentCount;
+    }
+
     let results = [];
     try {
         results = JSON.parse(relay.dataset.collectedUrls || '[]');
     } catch(e) {}
     
-    console.log('[Scraper] Collected URLs:', results);
     return results;
 }
 
