@@ -51,7 +51,6 @@ var MediaScanner = {
             if (classification.type === window.ItemClassifier.TYPES.STATIC_IMAGE) {
               // For static images, we still use the UUID for the direct URL
               const uuid = window.Utils.extractPostId(postData.id);
-              const uuid = window.Utils.extractPostId(postData.id);
               const staticUrl = `https://imagine-public.x.ai/imagine-public/images/${uuid}.jpg?cache=1&dl=1`;
               console.log(`[Scanner] Adding static image: ${uuid} -> ${staticUrl}`);
               allMediaData.set(staticUrl, { url: staticUrl, filename: `${uuid}.jpg` });
