@@ -26,13 +26,17 @@ var MediaScanner = {
       if (window.ProgressModal.isCancelled()) throw new Error('Operation cancelled by user');
       
       const cards = document.querySelectorAll(window.SELECTORS.CARD);
+      console.log(`[Scanner] Scroll attempt ${attempts + 1}: Found ${cards.length} cards in DOM`);
       let newItemsFound = 0;
 
       for (let idx = 0; idx < cards.length; idx++) {
         const card = cards[idx];
         const postData = window.Utils.extractPostDataFromElement(card);
         
-        if (!postData) continue;
+        if (!postData) {
+            console.warn(`[Scanner] Failed to extract data from card index ${idx}`, card);
+            continue;
+        }
 
         // Skip logging if this specific card element was already scanned in a previous attempt
         if (!processedCardElements.has(card)) {
@@ -41,6 +45,7 @@ var MediaScanner = {
 
           // If we haven't added this unique variation to our queues yet
           if (!processedPostIds.has(postData.id)) {
+            console.log(`[Scanner] New item found: ${postData.id} (Type: ${classification.type})`);
             processedPostIds.add(postData.id);
 
             if (classification.type === window.ItemClassifier.TYPES.STATIC_IMAGE) {
@@ -53,6 +58,8 @@ var MediaScanner = {
               complexPostsToAnalyze.push(postData);
               newItemsFound++;
             }
+          } else {
+             // console.log(`[Scanner] Skipping duplicate: ${postData.id}`);
           }
         }
       }
