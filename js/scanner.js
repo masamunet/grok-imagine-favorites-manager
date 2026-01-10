@@ -94,7 +94,16 @@ var MediaScanner = {
       await window.Utils.sleep(window.CONFIG.ANALYSIS_DELAY_MS);
     }
 
-    return Array.from(allMediaData.values());
+    // Filter results based on requested type
+    let finalResults = Array.from(allMediaData.values());
+
+    if (type === 'saveImages') {
+      finalResults = finalResults.filter(item => !item.filename.toLowerCase().endsWith('.mp4'));
+    } else if (type === 'saveVideos') {
+      finalResults = finalResults.filter(item => item.filename.toLowerCase().endsWith('.mp4'));
+    }
+
+    return finalResults;
   },
 
   /**
