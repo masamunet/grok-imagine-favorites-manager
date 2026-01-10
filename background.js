@@ -26,20 +26,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // Internal log proxy from injected script
-  if (request.action === 'proxyLogInternal') {
-      if (request.senderTabId) {
-          chrome.tabs.sendMessage(request.senderTabId, { 
-              action: 'proxyLog', 
-              message: request.message 
-          }).catch(() => {});
-      }
-      return true;
-  }
+// proxyLogInternal listener removed
 
   if (request.action === 'analyzePost') {
-    const senderTabId = sender.tab ? sender.tab.id : null;
-    analyzePostInTab(request.postId, request.url, senderTabId)
+    analyzePostInTab(request.postId, request.url)
       .then(result => sendResponse({ success: true, data: result }))
       .catch(error => {
         console.error('Analysis error:', error);
@@ -52,7 +42,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 /**
  * Opens a background tab, injects network sniffer, interacts, captures URLs
  */
-async function analyzePostInTab(postId, postUrl, senderTabId) {
+async function analyzePostInTab(postId, postUrl) {
   let tabId = null;
   const collectedMedia = new Set(); // Use Set for uniqueness
 
@@ -86,7 +76,7 @@ async function analyzePostInTab(postId, postUrl, senderTabId) {
     const vResults = await chrome.scripting.executeScript({
       target: { tabId },
       func: scrapeAndIntercept,
-      args: ['video', senderTabId]
+      args: ['video']
     });
     if (vResults && vResults[0] && vResults[0].result) {
         vResults[0].result.forEach(u => collectedMedia.add(u));
@@ -103,7 +93,7 @@ async function analyzePostInTab(postId, postUrl, senderTabId) {
     const iResults = await chrome.scripting.executeScript({
         target: { tabId },
         func: scrapeAndIntercept,
-        args: ['image', senderTabId]
+        args: ['image']
     });
     if (iResults && iResults[0] && iResults[0].result) {
         iResults[0].result.forEach(u => collectedMedia.add(u));
@@ -194,25 +184,13 @@ function networkSniffer() {
 /**
  * SCRAPER - Runs in ISOLATED world, clicks button and watches relay
  */
-async function scrapeAndIntercept(mode, senderTabId) {
+async function scrapeAndIntercept(mode) {
     const relay = document.getElementById('grok-sniffer-relay');
-    
-    const log = (msg) => {
-        if (senderTabId) {
-            chrome.runtime.sendMessage({ 
-                action: 'proxyLogInternal', 
-                senderTabId: senderTabId,
-                message: msg 
-            }).catch(() => {});
-        } else {
-            console.log(msg);
-        }
-    };
 
     if (!relay) {
-        log('[Scraper] Relay not found!');
         return [];
     }
+
 
     // Reset collected urls
     relay.dataset.collectedUrls = '[]';
@@ -235,7 +213,6 @@ async function scrapeAndIntercept(mode, senderTabId) {
     // 1. Wait for Button (Hydration/Render check) - Max 1.5s
     let dlBtn = findBtn();
     if (!dlBtn) {
-        log('[Scraper] Waiting for button...');
         for (let i = 0; i < 15; i++) { // 100ms * 15 = 1.5s
             await new Promise(r => setTimeout(r, 100));
             dlBtn = findBtn();
@@ -245,11 +222,8 @@ async function scrapeAndIntercept(mode, senderTabId) {
     
     let buttonFound = false;
     if (dlBtn) {
-        log(`[Scraper] Clicking button for ${mode}...`);
         dlBtn.click();
         buttonFound = true;
-    } else {
-        log(`[Scraper] No download button found for ${mode}.`);
     }
 
     // 2. Wait for Network Idle (Dynamic Exit)
@@ -273,17 +247,14 @@ async function scrapeAndIntercept(mode, senderTabId) {
 
         const elapsed = Date.now() - startTime;
 
-        // Log occasionally (every ~500ms approx)
-        if (Math.floor(elapsed / 500) > Math.floor((elapsed - 100) / 500)) {
-             log(`[Scraper] Polling ${mode}: ${currentCount} items (${elapsed}ms)`);
-        }
+        // Log occasionally (every ~500ms approx) - REMOVED
+
 
         // If we have items...
         if (currentCount > 0) {
             // First time detection
             if (!firstDiscoveryTime) {
                 firstDiscoveryTime = Date.now();
-                log(`[Scraper] First item detected at ${firstDiscoveryTime - startTime}ms`);
             }
 
             // And count hasn't changed since last tick
@@ -293,9 +264,6 @@ async function scrapeAndIntercept(mode, senderTabId) {
                 const idleDuration = Date.now() - idleStartTime;
                 // If quiet for 600ms, exit
                 if (idleDuration >= 600) {
-                    const totalTime = Date.now() - startTime;
-                    const searchTime = firstDiscoveryTime - startTime;
-                    log(`[Scraper] Idle detected. Exiting. Total: ${totalTime}ms (Search: ${searchTime}ms, IdleWait: ${idleDuration}ms)`);
                     break;
                 }
             } else {
@@ -308,12 +276,10 @@ async function scrapeAndIntercept(mode, senderTabId) {
             
             // If button was found and 2s passed, timeout early
             if (buttonFound && elapsed >= 2000) {
-                 log(`[Scraper] 0 items after ${elapsed}ms (Button clicked). Timing out.`);
                  break;
             }
             // If button NOT found, wait shorter (1.5s)
             if (!buttonFound && elapsed >= 1500) {
-                 log(`[Scraper] 0 items after ${elapsed}ms (No button). Timing out.`);
                  break;
             }
         }
