@@ -51,7 +51,9 @@ var MediaScanner = {
             if (classification.type === window.ItemClassifier.TYPES.STATIC_IMAGE) {
               // For static images, we still use the UUID for the direct URL
               const uuid = window.Utils.extractPostId(postData.id);
+              const uuid = window.Utils.extractPostId(postData.id);
               const staticUrl = `https://imagine-public.x.ai/imagine-public/images/${uuid}.jpg?cache=1&dl=1`;
+              console.log(`[Scanner] Adding static image: ${uuid} -> ${staticUrl}`);
               allMediaData.set(staticUrl, { url: staticUrl, filename: `${uuid}.jpg` });
               newItemsFound++;
             } else {
@@ -103,6 +105,7 @@ var MediaScanner = {
 
     // Filter results based on requested type
     let finalResults = Array.from(allMediaData.values());
+    console.log(`[Scanner] Total collected before filter: ${finalResults.length} items (Action: ${type})`);
 
     if (type === 'saveImages') {
       finalResults = finalResults.filter(item => !item.filename.toLowerCase().endsWith('.mp4'));
@@ -110,6 +113,7 @@ var MediaScanner = {
       finalResults = finalResults.filter(item => item.filename.toLowerCase().endsWith('.mp4'));
     }
 
+    console.log(`[Scanner] Final results after filter: ${finalResults.length} items`);
     return finalResults;
   },
 
