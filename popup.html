@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <title>Grok Favorites Manager</title>
   <style>
@@ -8,39 +9,39 @@
       padding: 0;
       box-sizing: border-box;
     }
-    
-    body { 
-      width: 340px; 
+
+    body {
+      width: 340px;
       background: #0a0a0a;
       color: #e5e5e5;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
       padding: 0;
     }
-    
+
     .header {
       background: linear-gradient(135deg, #1a1a1a 0%, #0a0a0a 100%);
       padding: 20px;
       border-bottom: 1px solid #2a2a2a;
     }
-    
+
     h3 {
       font-size: 18px;
       font-weight: 600;
       letter-spacing: -0.5px;
       margin: 0;
     }
-    
+
     .subtitle {
       font-size: 12px;
       color: #888;
       margin-top: 4px;
     }
-    
+
     .section {
       padding: 16px 20px;
       border-bottom: 1px solid #2a2a2a;
     }
-    
+
     .section-title {
       font-size: 11px;
       text-transform: uppercase;
@@ -49,7 +50,7 @@
       margin-bottom: 12px;
       font-weight: 600;
     }
-    
+
     button {
       display: flex;
       align-items: center;
@@ -67,53 +68,53 @@
       transition: all 0.15s ease;
       font-family: inherit;
     }
-    
+
     button:hover {
       background: #2a2a2a;
       border-color: #3a3a3a;
       transform: translateY(-1px);
     }
-    
+
     button:active {
       transform: translateY(0);
       background: #222;
     }
-    
+
     button.primary {
       background: #fff;
       color: #0a0a0a;
       border-color: #fff;
     }
-    
+
     button.primary:hover {
       background: #e5e5e5;
       border-color: #e5e5e5;
     }
-    
+
     button.danger {
       background: #2a1a1a;
       border-color: #4a2a2a;
       color: #ff6b6b;
     }
-    
+
     button.danger:hover {
       background: #3a1a1a;
       border-color: #5a2a2a;
     }
-    
+
     #progress {
       padding: 16px 20px;
       background: #0f0f0f;
       display: none;
     }
-    
+
     #progress h4 {
       font-size: 12px;
       font-weight: 600;
       margin-bottom: 8px;
       color: #888;
     }
-    
+
     #progressText {
       font-size: 13px;
       color: #e5e5e5;
@@ -123,14 +124,14 @@
       text-align: center;
       border: 1px solid #2a2a2a;
     }
-    
+
     .footer {
       padding: 12px 20px;
       text-align: center;
       font-size: 11px;
       color: #555;
     }
-    
+
     .rate-limit-notice {
       font-size: 11px;
       color: #888;
@@ -142,12 +143,13 @@
     }
   </style>
 </head>
+
 <body>
   <div class="header">
     <h3>Grok Imagine Favorites Manager</h3>
     <div class="subtitle">Download and manage your favorites<br />Refresh page if you encounter issues.</div>
   </div>
-  
+
   <div class="section">
     <div class="section-title">Download</div>
     <button id="saveBoth" class="primary">Download All Media</button>
@@ -155,30 +157,30 @@
     <button id="saveVideos">Download Videos Only</button>
     <div class="rate-limit-notice">Downloads are rate-limited to ~3 per second</div>
   </div>
-  
+
   <div class="section">
     <div class="section-title">Video Tools</div>
     <button id="upscaleVideos">Upscale Videos to HD</button>
   </div>
-  
-  <div class="section">
-    <div class="section-title">Manage</div>
-    <button id="unsaveAll" class="danger">Unfavorite All</button>
+
+  <div class="section-title">Manage</div>
+  <button id="unsaveAll" class="danger">Unfavorite All</button>
   </div>
-  
+
   <div class="section">
     <button id="viewDownloads">Open Downloads Folder</button>
     <button id="downloadSettings">Open Download Settings</button>
     <button id="cancelOperation" class="danger" style="display: none;">Cancel Current Operation</button>
   </div>
-  
+
   <div id="progress">
     <h4>DOWNLOAD PROGRESS</h4>
     <div id="progressText">No active downloads</div>
   </div>
-  
+
   <div class="footer">Made for Grok Imagine</div>
-  
+
   <script src="popup.js"></script>
 </body>
+
 </html>

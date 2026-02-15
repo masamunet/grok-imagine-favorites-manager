@@ -22,10 +22,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (action === 'ping') {
     // Basic connectivity check
     if (window.ProgressModal) {
-        sendResponse({ loaded: true });
+      sendResponse({ loaded: true });
     } else {
-        // Retry logic often handles this, but good to be explicit
-        sendResponse({ loaded: false });
+      // Retry logic often handles this, but good to be explicit
+      sendResponse({ loaded: false });
     }
     return true;
   }
@@ -57,9 +57,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       chrome.storage.local.set({ activeOperation: false });
     }
   })();
-  
-  // Return true to indicate async response (though we handled it inside async IIFE)
-  return true; 
+
+  // Send immediate response so Popup doesn't wait (and can close cleanly)
+  sendResponse({ success: true, status: 'started' });
+  return false;
 });
 
 /**
@@ -71,7 +72,7 @@ async function handleSaveFlow(type) {
       throw new Error('UI Module not loaded. Please refresh the page.');
     }
     window.ProgressModal.show('Collecting Favorites', 'Scanning page...');
-    
+
     // Delegate core work to MediaScanner
     const mediaList = await window.MediaScanner.scan(type);
 
@@ -80,14 +81,14 @@ async function handleSaveFlow(type) {
     }
 
     window.ProgressModal.update(100, `Found ${mediaList.length} items. Starting downloads...`);
-    
+
     // Send work to background script
     window.Api.startDownloads(mediaList);
-    
+
   } catch (error) {
     if (error.message === 'Operation cancelled by user') {
-        window.ProgressModal.hide();
-        return;
+      window.ProgressModal.hide();
+      return;
     }
     console.error('[GrokManager] Save flow error:', error);
     throw error;
@@ -110,20 +111,20 @@ async function handleUnsaveFlow() {
     if (!confirmUnsave) return;
 
     window.ProgressModal.show('Unfavoriting All Items', 'Starting sweep...');
-    
+
     // Delegate core work to MediaScanner
     const processedCount = await window.MediaScanner.unsaveAll();
 
     window.ProgressModal.update(100, `Done! Unfavorited ${processedCount} items.`);
-    
+
     await window.Utils.sleep(1000);
     alert(`Finished! ${processedCount} items were removed.\nThe page will now refresh.`);
     window.location.reload();
 
   } catch (error) {
     if (error.message === 'Operation cancelled by user') {
-        window.ProgressModal.hide();
-        return;
+      window.ProgressModal.hide();
+      return;
     }
     console.error('[GrokManager] Unsave flow error:', error);
     throw error;

@@ -13,25 +13,25 @@ const PROGRESS_CLEAR_DELAY = 5000; // Clear progress after 5 seconds
 document.addEventListener('DOMContentLoaded', () => {
   // Check if we're on the favorites page first
   checkIfOnFavoritesPage();
-  
+
   // Download actions
   document.getElementById('saveImages').addEventListener('click', () => sendAction('saveImages'));
   document.getElementById('saveVideos').addEventListener('click', () => sendAction('saveVideos'));
   document.getElementById('saveBoth').addEventListener('click', () => sendAction('saveBoth'));
   document.getElementById('upscaleVideos').addEventListener('click', () => sendAction('upscaleVideos'));
-  
+
   // Manage actions
   document.getElementById('unsaveAll').addEventListener('click', () => sendAction('unsaveAll'));
-  
+
   // Utility actions
   document.getElementById('viewDownloads').addEventListener('click', openDownloadsPage);
   document.getElementById('downloadSettings').addEventListener('click', openDownloadSettings);
   document.getElementById('cancelOperation').addEventListener('click', cancelCurrentOperation);
-  
+
   // Start progress tracking
   setInterval(updateProgress, UPDATE_INTERVAL);
   updateProgress();
-  
+
   // Check for active operations
   checkActiveOperation();
 });
@@ -42,18 +42,18 @@ document.addEventListener('DOMContentLoaded', () => {
 function checkIfOnFavoritesPage() {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (!tabs || tabs.length === 0) return;
-    
+
     const tab = tabs[0];
     const url = tab.url || '';
     const isFavoritesPage = url.includes('grok.com/imagine/favorites');
-    
+
     if (!isFavoritesPage) {
       // Disable all action buttons
       const actionButtons = [
         'saveImages', 'saveVideos', 'saveBoth', 'upscaleVideos',
         'unsaveAll'
       ];
-      
+
       actionButtons.forEach(buttonId => {
         const button = document.getElementById(buttonId);
         if (button) {
@@ -63,7 +63,7 @@ function checkIfOnFavoritesPage() {
           button.title = 'Only available on grok.com/imagine/favorites page';
         }
       });
-      
+
       // Show warning message
       const container = document.querySelector('.container');
       if (container) {
@@ -87,9 +87,9 @@ function sendAction(action) {
       console.error('No active tab found');
       return;
     }
-    
+
     const tab = tabs[0];
-    
+
     // Try to ping the content script first
     chrome.tabs.sendMessage(tab.id, { action: 'ping' }, async (response) => {
       if (chrome.runtime.lastError) {
@@ -108,14 +108,14 @@ function sendAction(action) {
               'content.js'
             ]
           });
-          
+
           // Wait a moment for script to initialize
           setTimeout(() => {
             chrome.tabs.sendMessage(tab.id, { action }, (response) => {
               // Ignore errors - content script handles the action asynchronously
               // No need to log anything, this is expected behavior
             });
-            
+
             // Close the popup after sending the action
             window.close();
           }, 100);
@@ -129,7 +129,7 @@ function sendAction(action) {
           // Ignore errors - content script handles the action asynchronously
           // No need to log anything, this is expected behavior
         });
-        
+
         // Close the popup after sending the action
         window.close();
       }
@@ -161,7 +161,7 @@ function cancelCurrentOperation() {
       console.error('No active tab found');
       return;
     }
-    
+
     chrome.tabs.sendMessage(tabs[0].id, { action: 'cancelOperation' }, (response) => {
       if (chrome.runtime.lastError) {
         // Silently ignore - operation may have already completed
@@ -187,7 +187,7 @@ function checkActiveOperation() {
       cancelBtn.style.display = 'none';
     }
   });
-  
+
   // Check periodically
   setInterval(() => {
     chrome.storage.local.get(['activeOperation'], (result) => {
@@ -209,18 +209,18 @@ function updateProgress() {
     const total = result.totalDownloads || 0;
     const progress = result.downloadProgress || {};
     const completed = Object.values(progress).filter(s => s === 'complete').length;
-    
+
     const progressElement = document.getElementById('progress');
     const progressText = document.getElementById('progressText');
-    
+
     if (total > 0) {
       progressElement.style.display = 'block';
       const statusValues = Object.values(progress);
       const completed = statusValues.filter(s => s === 'complete').length;
       const failed = statusValues.filter(s => s === 'failed').length;
-      
+
       progressText.textContent = `${completed} complete${failed > 0 ? `, ${failed} failed` : ''} of ${total}`;
-      
+
       // Clear progress after all (including failures) are finished
       if (completed + failed === total) {
         setTimeout(() => {

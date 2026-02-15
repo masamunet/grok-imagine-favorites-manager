@@ -9,9 +9,9 @@ var MediaScanner = {
    */
   async scan(type) {
 
-    
+
     let scrollContainer = document.documentElement;
-    const possibleContainers = [ document.querySelector('main'), document.querySelector('.overflow-y-auto') ]
+    const possibleContainers = [document.querySelector('main'), document.querySelector('.overflow-y-auto')]
       .filter(el => el !== null);
     if (possibleContainers.length) scrollContainer = possibleContainers[0];
 
@@ -24,14 +24,14 @@ var MediaScanner = {
     let attempts = 0;
     while (attempts < window.CONFIG.SCROLL_ATTEMPTS) {
       if (window.ProgressModal.isCancelled()) throw new Error('Operation cancelled by user');
-      
+
       const cards = document.querySelectorAll(window.SELECTORS.CARD);
       let newItemsFound = 0;
 
       for (let idx = 0; idx < cards.length; idx++) {
         const card = cards[idx];
         const postData = window.Utils.extractPostDataFromElement(card);
-        
+
         if (!postData) continue;
 
         // Skip logging if this specific card element was already scanned in a previous attempt
@@ -58,19 +58,19 @@ var MediaScanner = {
       }
 
       window.ProgressModal.update(30, `Scanning... Identified ${processedPostIds.size} unique items`);
-      
+
       scrollContainer.scrollTop += window.innerHeight;
       await window.Utils.sleep(window.CONFIG.SCROLL_DELAY_MS);
       attempts++;
     }
 
     // Phase 2: Deep Analysis for Complex Items
-    
+
     for (let i = 0; i < complexPostsToAnalyze.length; i++) {
       if (window.ProgressModal.isCancelled()) break;
-      
+
       const { id, url } = complexPostsToAnalyze[i];
-      window.ProgressModal.update(50 + ((i / complexPostsToAnalyze.length) * 40), `Analyzing Item ${i+1}/${complexPostsToAnalyze.length}...`);
+      window.ProgressModal.update(50 + ((i / complexPostsToAnalyze.length) * 40), `Analyzing Item ${i + 1}/${complexPostsToAnalyze.length}...`);
       window.ProgressModal.updateSubStatus(`Opening analysis tab for ${id}...`);
 
       try {
@@ -89,9 +89,20 @@ var MediaScanner = {
       } catch (e) {
         console.error(`[Scanner] ❌ Analysis failed for ${id}:`, e);
       }
-      
+
       await window.Utils.sleep(window.CONFIG.ANALYSIS_DELAY_MS);
     }
+
+
+    // Debugging Logs requested by User
+    const totalVideos = Array.from(allMediaData.values()).filter(item => item.filename.endsWith('.mp4')).length;
+    const totalImages = Array.from(allMediaData.values()).filter(item => !item.filename.endsWith('.mp4')).length;
+
+    console.log(`[Scanner] 📊 Total Unique Items Detected on Page: ${processedPostIds.size}`);
+    console.log(`[Scanner] 🎥 Complex Items (Videos/Analysable) Found: ${complexPostsToAnalyze.length}`);
+    console.log(`[Scanner] 📦 Total Media Ready for Download: ${allMediaData.size}`);
+    console.log(`[Scanner] 📹 Videos to Download: ${totalVideos}`);
+    console.log(`[Scanner] 🖼️ Images to Download: ${totalImages}`);
 
     // Filter results based on requested type
     let finalResults = Array.from(allMediaData.values());
@@ -110,9 +121,9 @@ var MediaScanner = {
    */
   async unsaveAll() {
     console.log('[Scanner] Starting unsave sweep...');
-    
+
     let scrollContainer = document.documentElement;
-    const possibleContainers = [ document.querySelector('main'), document.querySelector('.overflow-y-auto') ]
+    const possibleContainers = [document.querySelector('main'), document.querySelector('.overflow-y-auto')]
       .filter(el => el !== null);
     if (possibleContainers.length) scrollContainer = possibleContainers[0];
 
@@ -122,56 +133,56 @@ var MediaScanner = {
     let lastScrollHeight = 0;
 
     while (!window.ProgressModal.isCancelled()) {
-        const cards = document.querySelectorAll(window.SELECTORS.LIST_ITEM);
-        let actedOnThisTurn = 0;
+      const cards = document.querySelectorAll(window.SELECTORS.LIST_ITEM);
+      let actedOnThisTurn = 0;
 
-        for (let i = 0; i < cards.length; i++) {
-            if (window.ProgressModal.isCancelled()) break;
-            const card = cards[i];
+      for (let i = 0; i < cards.length; i++) {
+        if (window.ProgressModal.isCancelled()) break;
+        const card = cards[i];
 
-            // 1. Physical Click (Try this first as it's most robust)
-            const unsaveBtn = card.querySelector(window.SELECTORS.UNSAVE_BUTTON);
-            let clicked = false;
-            
-            if (unsaveBtn) {
-                try {
-                    unsaveBtn.click();
-                    clicked = true;
-                    actedOnThisTurn++;
-                    totalProcessed++;
-                    await window.Utils.sleep(300); // Wait for UI update
-                } catch(e) {}
-            }
+        // 1. Physical Click (Try this first as it's most robust)
+        const unsaveBtn = card.querySelector(window.SELECTORS.UNSAVE_BUTTON);
+        let clicked = false;
 
-            // 2. API Fallback (Only if we can identify the ID and haven't clicked)
-            const postData = window.Utils.extractPostDataFromElement(card);
-            if (postData && postData.id && !processedIds.has(postData.id)) {
-                processedIds.add(postData.id);
-                // If button click didn't happen (or failed), try API logic
-                // But note: if button clicked, we still add ID to processed to avoid double counting
-                if (!clicked) {
-                     await window.Api.unlikePost(postData.id);
-                     actedOnThisTurn++;
-                     totalProcessed++;
-                     await window.Utils.sleep(window.CONFIG.UNFAVORITE_DELAY_MS || 200);
-                }
-            }
-            
-            window.ProgressModal.update(Math.min(98, totalProcessed * 2), `Unfavorited ${totalProcessed} items...`);
+        if (unsaveBtn) {
+          try {
+            unsaveBtn.click();
+            clicked = true;
+            actedOnThisTurn++;
+            totalProcessed++;
+            await window.Utils.sleep(300); // Wait for UI update
+          } catch (e) { }
         }
 
-        // Scroll logic
-        const currentScrollHeight = scrollContainer.scrollHeight;
-        if (currentScrollHeight === lastScrollHeight) unchangedCount++;
-        else { unchangedCount = 0; lastScrollHeight = currentScrollHeight; }
+        // 2. API Fallback (Only if we can identify the ID and haven't clicked)
+        const postData = window.Utils.extractPostDataFromElement(card);
+        if (postData && postData.id && !processedIds.has(postData.id)) {
+          processedIds.add(postData.id);
+          // If button click didn't happen (or failed), try API logic
+          // But note: if button clicked, we still add ID to processed to avoid double counting
+          if (!clicked) {
+            await window.Api.unlikePost(postData.id);
+            actedOnThisTurn++;
+            totalProcessed++;
+            await window.Utils.sleep(window.CONFIG.UNFAVORITE_DELAY_MS || 200);
+          }
+        }
 
-        // Exit if no actions taken and scroll didn't change (end of list)
-        if (actedOnThisTurn === 0 && unchangedCount >= 2) break;
+        window.ProgressModal.update(Math.min(98, totalProcessed * 2), `Unfavorited ${totalProcessed} items...`);
+      }
 
-        scrollContainer.scrollTop += window.innerHeight / 2;
-        await window.Utils.sleep(window.CONFIG.SCROLL_DELAY_MS);
+      // Scroll logic
+      const currentScrollHeight = scrollContainer.scrollHeight;
+      if (currentScrollHeight === lastScrollHeight) unchangedCount++;
+      else { unchangedCount = 0; lastScrollHeight = currentScrollHeight; }
+
+      // Exit if no actions taken and scroll didn't change (end of list)
+      if (actedOnThisTurn === 0 && unchangedCount >= 2) break;
+
+      scrollContainer.scrollTop += window.innerHeight / 2;
+      await window.Utils.sleep(window.CONFIG.SCROLL_DELAY_MS);
     }
-    
+
     return totalProcessed;
   }
 };
