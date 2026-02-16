@@ -90,7 +90,8 @@ async function handleSaveFlow(type) {
     window.ProgressModal.update(50, `Found ${foundItems.length} items. Starting Deep Analysis (Tabs)...`);
     const analyzedMedia = await window.MediaScanner.prepareForDownload(foundItems, type);
 
-    // 3. Scan Only: Report and Exit
+    // 3. Scan Only: Report and Exit -> REMOVED (Feature deprecated)
+    /*
     if (type === 'scanOnly') {
       const videoCount = analyzedMedia.filter(i => i.filename.endsWith('.mp4')).length;
       const imageCount = analyzedMedia.length - videoCount;
@@ -104,6 +105,7 @@ async function handleSaveFlow(type) {
         `Images: ${imageCount}`);
       return;
     }
+    */
 
     if (analyzedMedia.length === 0) {
       throw new Error('No downloadable media could be resolved from analysis.');

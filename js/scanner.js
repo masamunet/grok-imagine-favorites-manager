@@ -7,7 +7,7 @@ var MediaScanner = {
    * Phase 1: Expand Page and Scan (Visual Only)
    */
   async scanPage(visualizeOnly = false) {
-    console.log('[Scanner] Phase 1: Scanning Current View (No Scroll)...');
+    // console.log('[Scanner] Phase 1: Scanning Current View (No Scroll)...');
 
     // 1. Expand the page fully first (Pre-roll) -> DISABLED by User Request
     // await this.expandPageToBottom();
@@ -17,9 +17,9 @@ var MediaScanner = {
     console.log('[Scanner] Expansion complete. Starting Scan...');
     const foundItems = this.collectVisibleItems();
 
-    // LOGGING: Only total count (Breakdown happens after analysis)
-    console.log(`[Scanner] 📊 Total IDs Collected: ${foundItems.length}`);
-    console.log(`[Scanner] ⏳ Preparing to open background tabs for deep analysis...`);
+    // LOGGING: Minimal
+    // console.log(`[Scanner] 📊 Total IDs Collected: ${foundItems.length}`);
+    console.log(`[Scanner] ⏳ Preparing deep analysis...`);
 
     return foundItems;
   },

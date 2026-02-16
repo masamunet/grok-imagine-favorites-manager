@@ -23,8 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Manage actions
   document.getElementById('unsaveAll').addEventListener('click', () => sendAction('unsaveAll'));
 
-  // Debug actions
-  document.getElementById('scanOnly').addEventListener('click', () => sendAction('scanOnly'));
+
 
   // Utility actions
   document.getElementById('viewDownloads').addEventListener('click', openDownloadsPage);
