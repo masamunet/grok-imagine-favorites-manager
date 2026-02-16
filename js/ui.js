@@ -12,8 +12,8 @@ var ProgressModal = {
     this.modal = document.createElement('div');
     this.modal.id = 'grok-favorites-progress-modal';
     this.modal.innerHTML = `
-      <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.8); backdrop-filter: blur(4px); z-index: 999999; display: flex; align-items: center; justify-content: center; font-family: -apple-system, system-ui, sans-serif;">
-        <div style="background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 16px; padding: 32px; min-width: 400px; max-width: 500px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);">
+      <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.4); z-index: 999999; display: flex; align-items: center; justify-content: center; font-family: -apple-system, system-ui, sans-serif; pointer-events: none;">
+        <div style="background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 16px; padding: 32px; min-width: 400px; max-width: 500px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); pointer-events: auto;">
           <div style="font-size: 20px; font-weight: 600; color: #e5e5e5; margin-bottom: 8px;" id="grok-progress-title">Processing...</div>
           <div style="font-size: 14px; color: #888; margin-bottom: 20px;" id="grok-progress-subtitle">Please wait</div>
           <div style="background: #0a0a0a; border-radius: 8px; height: 8px; overflow: hidden; margin-bottom: 16px;">
@@ -43,7 +43,7 @@ var ProgressModal = {
     document.getElementById('grok-progress-bar').style.width = '0%';
     document.getElementById('grok-progress-details').textContent = 'Starting...';
     document.getElementById('grok-progress-substatus').textContent = '';
-    
+
     const cancelBtn = document.getElementById('grok-cancel-button');
     cancelBtn.textContent = 'Cancel Operation';
     cancelBtn.disabled = false;
@@ -58,7 +58,7 @@ var ProgressModal = {
     const detailsEl = document.getElementById('grok-progress-details');
     if (detailsEl) detailsEl.textContent = details;
   },
-  
+
   updateSubStatus(text) {
     if (!this.modal) return;
     const sub = document.getElementById('grok-progress-substatus');

@@ -4,122 +4,219 @@
 
 var MediaScanner = {
   /**
-   * Scans the page, scrolls, and collects all available media
-   * Returns a list of media objects {url, filename}
+   * Phase 1: Expand Page and Scan (Visual Only)
    */
-  async scan(type) {
+  async scanPage(visualizeOnly = false) {
+    console.log('[Scanner] Phase 1: Scanning Current View (No Scroll)...');
+
+    // 1. Expand the page fully first (Pre-roll) -> DISABLED by User Request
+    // await this.expandPageToBottom();
 
 
-    let scrollContainer = document.documentElement;
-    const possibleContainers = [document.querySelector('main'), document.querySelector('.overflow-y-auto')]
-      .filter(el => el !== null);
-    if (possibleContainers.length) scrollContainer = possibleContainers[0];
+    // 2. Once fully expanded, scan the DOM
+    console.log('[Scanner] Expansion complete. Starting Scan...');
+    const foundItems = this.collectVisibleItems();
 
-    const allMediaData = new Map(); // URL -> {url, filename}
-    const complexPostsToAnalyze = []; // List of {id, url}
-    const processedPostIds = new Set();
-    const processedCardElements = new WeakSet(); // Track card DOM elements for logging
+    // LOGGING: Only total count (Breakdown happens after analysis)
+    console.log(`[Scanner] 📊 Total IDs Collected: ${foundItems.length}`);
+    console.log(`[Scanner] ⏳ Preparing to open background tabs for deep analysis...`);
 
-    // Phase 1: Scroll and Identify
-    let attempts = 0;
-    while (attempts < window.CONFIG.SCROLL_ATTEMPTS) {
-      if (window.ProgressModal.isCancelled()) throw new Error('Operation cancelled by user');
+    return foundItems;
+  },
 
-      const cards = document.querySelectorAll(window.SELECTORS.CARD);
-      let newItemsFound = 0;
+  /**
+   * Finds the likely scrollable container
+   */
+  getScrollContainer() {
+    // 1. naive check for easy selectors
+    const candidates = [
+      document.querySelector('.overflow-y-auto'),
+      document.querySelector('main'),
+      document.documentElement,
+      document.body
+    ].filter(el => el);
 
-      for (let idx = 0; idx < cards.length; idx++) {
-        const card = cards[idx];
-        const postData = window.Utils.extractPostDataFromElement(card);
+    // 2. Find the one with biggest scrollHeight that is scrollable
+    let bestContainer = window;
+    let maxScrollHeight = 0;
 
-        if (!postData) continue;
-
-        // Skip logging if this specific card element was already scanned in a previous attempt
-        if (!processedCardElements.has(card)) {
-          const classification = window.ItemClassifier.classify(card, idx);
-          processedCardElements.add(card);
-
-          // If we haven't added this unique variation to our queues yet
-          if (!processedPostIds.has(postData.id)) {
-            processedPostIds.add(postData.id);
-
-            if (classification.type === window.ItemClassifier.TYPES.STATIC_IMAGE) {
-              // For static images, we still use the UUID for the direct URL
-              const uuid = window.Utils.extractPostId(postData.id);
-              const staticUrl = `https://imagine-public.x.ai/imagine-public/images/${uuid}.jpg?cache=1&dl=1`;
-              allMediaData.set(staticUrl, { url: staticUrl, filename: `${uuid}.jpg` });
-              newItemsFound++;
-            } else {
-              complexPostsToAnalyze.push(postData);
-              newItemsFound++;
-            }
-          }
-        }
+    for (const el of candidates) {
+      const style = window.getComputedStyle(el);
+      const isScrollable = style.overflowY === 'auto' || style.overflowY === 'scroll' || el === document.documentElement;
+      if (isScrollable && el.scrollHeight > el.clientHeight && el.scrollHeight > maxScrollHeight) {
+        maxScrollHeight = el.scrollHeight;
+        bestContainer = el;
       }
-
-      window.ProgressModal.update(30, `Scanning... Identified ${processedPostIds.size} unique items`);
-
-      scrollContainer.scrollTop += window.innerHeight;
-      await window.Utils.sleep(window.CONFIG.SCROLL_DELAY_MS);
-      attempts++;
     }
 
-    // Phase 2: Deep Analysis for Complex Items
+    // Fallback: if window scrollY > 0, window is definitely scrollable
+    if (window.scrollY > 0) return window;
 
-    for (let i = 0; i < complexPostsToAnalyze.length; i++) {
+    return bestContainer;
+  },
+
+  /**
+   * Scrolls to the bottom repeatedly until no new content loads.
+   */
+  async expandPageToBottom() {
+    let scrollContainer = this.getScrollContainer();
+    console.log('[Scanner] Identified scroll container:', scrollContainer);
+
+    let lastScrollHeight = 0;
+    let unchangedCount = 0;
+    const MAX_UNCHANGED = 3;
+
+    while (true) {
+      if (window.ProgressModal.isCancelled()) throw new Error('Operation cancelled by user');
+
+      // Handle Window vs Element logic
+      const isWindow = scrollContainer === window;
+      const currentScrollHeight = isWindow ? document.body.scrollHeight : scrollContainer.scrollHeight;
+
+      // Scroll Action
+      if (isWindow) {
+        window.scrollTo(0, document.body.scrollHeight);
+      } else {
+        scrollContainer.scrollTop = scrollContainer.scrollHeight;
+      }
+
+      await window.Utils.sleep(window.CONFIG.SCROLL_DELAY_MS);
+
+      // Check results
+      const newScrollHeight = isWindow ? document.body.scrollHeight : scrollContainer.scrollHeight;
+
+      if (Math.abs(newScrollHeight - lastScrollHeight) < 10) {
+        unchangedCount++;
+        console.log(`[Scanner] Height unchanged (${unchangedCount}/${MAX_UNCHANGED})`);
+      } else {
+        unchangedCount = 0;
+        lastScrollHeight = newScrollHeight;
+        console.log(`[Scanner] Height increased to ${newScrollHeight}`);
+
+        // Update container if page structure changed (SPA Dynamic loading)
+        scrollContainer = this.getScrollContainer();
+      }
+
+      if (unchangedCount >= MAX_UNCHANGED) {
+        console.log('[Scanner] Page expansion finished.');
+        break;
+      }
+    }
+  },
+
+  /**
+   * Scans the current DOM for items
+   */
+  collectVisibleItems() {
+    const processedPostIds = new Set();
+    const foundItems = [];
+
+    const cards = document.querySelectorAll(window.SELECTORS.CARD);
+    console.log(`[Scanner] Analyzing ${cards.length} DOM elements...`);
+
+    for (let idx = 0; idx < cards.length; idx++) {
+      const card = cards[idx];
+      const postData = window.Utils.extractPostDataFromElement(card);
+
+      if (!postData) continue;
+
+      // CRITICAL: NO DOM CLASSIFICATION
+      // User requested to rely 100% on detailed page analysis (Tabs).
+      // We purely collect IDs here.
+
+      if (!processedPostIds.has(postData.id)) {
+        processedPostIds.add(postData.id);
+        foundItems.push({
+          id: postData.id,
+          url: postData.url,
+          // type: 'unknown', // We don't know yet. Analysis will determine.
+          details: {}
+        });
+      }
+    }
+
+    return foundItems;
+  },
+
+  async prepareForDownload(items, filterType) {
+    const allMediaData = new Map(); // URL -> {url, filename}
+
+    // CRITICAL CHANGE: User confirmed DOM detection is unreliable.
+    // We must analyze ALL items via API to ensure we don't miss videos.
+    // Previous "Static Image" optimization is removed.
+
+    console.log(`[Scanner] 🕵️ Starting Strict Analysis for ${items.length} items...`);
+
+    for (let i = 0; i < items.length; i++) {
       if (window.ProgressModal.isCancelled()) break;
+      const item = items[i];
 
-      const { id, url } = complexPostsToAnalyze[i];
-      window.ProgressModal.update(50 + ((i / complexPostsToAnalyze.length) * 40), `Analyzing Item ${i + 1}/${complexPostsToAnalyze.length}...`);
-      window.ProgressModal.updateSubStatus(`Opening analysis tab for ${id}...`);
+      window.ProgressModal.update(50 + ((i / items.length) * 40), `Opening Tab & Analyzing Item ${i + 1}/${items.length}...`);
 
       try {
-        const results = await window.Api.requestAnalysis(id, url);
-        if (Array.isArray(results)) {
-          results.forEach(item => {
-            if (item.url) {
-              const ext = item.type === 'video' ? 'mp4' : 'jpg';
-              const filename = `${item.id}.${ext}`;
-              if (!allMediaData.has(item.url)) {
-                allMediaData.set(item.url, { url: item.url, filename });
+        // ALWAYS use API/Background Tab Analysis
+        // This triggers background.js to open a tab, inject sniffer, and capture media
+        const results = await window.Api.requestAnalysis(item.id, item.url);
+
+        if (Array.isArray(results) && results.length > 0) {
+          results.forEach(res => {
+            if (res.url) {
+              const ext = res.type === 'video' ? 'mp4' : 'jpg';
+              // Keep original ID for filename if possible, usage depends on API response structure
+              // The API usually returns the variant ID. We might want to use the Post ID.
+              const filename = `${res.id}.${ext}`;
+
+              if (!allMediaData.has(res.url)) {
+                allMediaData.set(res.url, { url: res.url, filename, type: res.type });
               }
             }
           });
+        } else {
+          // Fallback: If API returns nothing, AND it was physically an image, maybe we can save it?
+          // But user wants strictness. If API fails, maybe we shouldn't guess.
+          // Let's assume API is the source of truth.
+          console.warn(`[Scanner] No media found via API for ${item.id}`);
         }
-      } catch (e) {
-        console.error(`[Scanner] ❌ Analysis failed for ${id}:`, e);
-      }
 
+      } catch (e) {
+        console.error(`[Scanner] ❌ Analysis failed for ${item.id}:`, e);
+      }
       await window.Utils.sleep(window.CONFIG.ANALYSIS_DELAY_MS);
     }
-
-
-    // Debugging Logs requested by User
-    const totalVideos = Array.from(allMediaData.values()).filter(item => item.filename.endsWith('.mp4')).length;
-    const totalImages = Array.from(allMediaData.values()).filter(item => !item.filename.endsWith('.mp4')).length;
-
-    console.log(`[Scanner] 📊 Total Unique Items Detected on Page: ${processedPostIds.size}`);
-    console.log(`[Scanner] 🎥 Complex Items (Videos/Analysable) Found: ${complexPostsToAnalyze.length}`);
-    console.log(`[Scanner] 📦 Total Media Ready for Download: ${allMediaData.size}`);
-    console.log(`[Scanner] 📹 Videos to Download: ${totalVideos}`);
-    console.log(`[Scanner] 🖼️ Images to Download: ${totalImages}`);
 
     // Filter results based on requested type
     let finalResults = Array.from(allMediaData.values());
 
-    if (type === 'saveImages') {
+    if (filterType === 'saveImages') {
       finalResults = finalResults.filter(item => !item.filename.toLowerCase().endsWith('.mp4'));
-    } else if (type === 'saveVideos') {
+    } else if (filterType === 'saveVideos') {
       finalResults = finalResults.filter(item => item.filename.toLowerCase().endsWith('.mp4'));
     }
 
+    const videoCount = finalResults.filter(item => item.filename.endsWith('.mp4')).length;
+    const imageCount = finalResults.length - videoCount;
+
+    // DETAILED LOGGING as requested by User
+    console.log(`[Scanner] 📦 Total Media Ready for Download: ${finalResults.length}`);
+    console.log(`[Scanner] 📹 Videos to Download: ${videoCount}`);
+    console.log(`[Scanner] 🖼️ Images to Download: ${imageCount}`);
+
     return finalResults;
+  },
+
+  async scan(type) {
+    console.warn('MediaScanner.scan is deprecated.');
+    return [];
+  },
+
+  async unsaveAll() {
+    return this.unsaveAllLegacy(); // Keeping legacy name internal if needed
   },
 
   /**
    * Unfavorites all items found on the page
    */
-  async unsaveAll() {
+  async unsaveAllLegacy() {
     console.log('[Scanner] Starting unsave sweep...');
 
     let scrollContainer = document.documentElement;

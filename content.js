@@ -42,7 +42,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     try {
       chrome.storage.local.set({ activeOperation: true });
 
-      if (action.startsWith('save')) {
+      if (action.startsWith('save') || action === 'scanOnly') {
         await handleSaveFlow(action);
       } else if (action === 'unsaveAll') {
         await handleUnsaveFlow();
@@ -71,19 +71,52 @@ async function handleSaveFlow(type) {
     if (!window.ProgressModal) {
       throw new Error('UI Module not loaded. Please refresh the page.');
     }
+    // 0. Pre-roll: Expand Page First
+    // USER REQUEST: "Scroll is meaningless" -> Disabled auto-scroll logic
+    console.log('[GrokManager] Auto-scroll disabled by user request.');
+    // await window.MediaScanner.expandPageToBottom();
+
     window.ProgressModal.show('Collecting Favorites', 'Scanning page...');
 
-    // Delegate core work to MediaScanner
-    const mediaList = await window.MediaScanner.scan(type);
+    // 1. Collect IDs (DOM Only, no analysis)
+    const foundItems = await window.MediaScanner.scanPage(type === 'scanOnly');
 
-    if (mediaList.length === 0) {
+    if (foundItems.length === 0) {
       throw new Error('No media found.');
     }
 
-    window.ProgressModal.update(100, `Found ${mediaList.length} items. Starting downloads...`);
+    // 2. Deep Analysis (Runs for BOTH ScanOnly and Download)
+    // This opens tabs in background to verify media existence
+    window.ProgressModal.update(50, `Found ${foundItems.length} items. Starting Deep Analysis (Tabs)...`);
+    const analyzedMedia = await window.MediaScanner.prepareForDownload(foundItems, type);
+
+    // 3. Scan Only: Report and Exit
+    if (type === 'scanOnly') {
+      const videoCount = analyzedMedia.filter(i => i.filename.endsWith('.mp4')).length;
+      const imageCount = analyzedMedia.length - videoCount;
+
+      window.ProgressModal.update(100, `Scan Complete! Found ${analyzedMedia.length} verified items.`);
+      await window.Utils.sleep(500);
+
+      alert(`Deep Scan Complete (Verified via Tabs):\n` +
+        `Total Verified: ${analyzedMedia.length}\n` +
+        `Videos: ${videoCount}\n` +
+        `Images: ${imageCount}`);
+      return;
+    }
+
+    if (analyzedMedia.length === 0) {
+      throw new Error('No downloadable media could be resolved from analysis.');
+    }
+
+    // 4. Download
+    window.ProgressModal.update(100, `Ready to download ${analyzedMedia.length} files. Starting...`);
+
+    console.log(`[GrokManager] Starting batch download for ${analyzedMedia.length} files.`);
+    console.table(analyzedMedia);
 
     // Send work to background script
-    window.Api.startDownloads(mediaList);
+    window.Api.startDownloads(analyzedMedia);
 
   } catch (error) {
     if (error.message === 'Operation cancelled by user') {

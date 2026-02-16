@@ -16,16 +16,31 @@ var Api = {
    * Request deep analysis for a post from the background script
    * Returns a Promise that resolves to an array of media objects [{url, id, type}]
    */
-  async requestAnalysis(postId, postUrl) {
+  async requestAnalysis(postId, postUrl, attempt = 0) {
     return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage({ action: 'analyzePost', postId, url: postUrl }, response => {
+      chrome.runtime.sendMessage({ action: 'analyzePost', postId, url: postUrl }, async (response) => {
         if (chrome.runtime.lastError) {
+          // If extension context invalidated or other runtime error
           return reject(chrome.runtime.lastError);
         }
+
         if (response && response.success) {
           resolve(response.data || []);
         } else {
-          reject(new Error(response?.error || 'Unknown analysis error'));
+          // Check for "Extension warming up" error and retry
+          const errorMsg = response?.error || 'Unknown analysis error';
+          if (errorMsg.includes('warming up') && attempt < 3) {
+            console.log(`[Api] Extension warming up, retrying analysis for ${postId} (Attempt ${attempt + 1})...`);
+            await new Promise(r => setTimeout(r, 1000));
+            try {
+              const result = await this.requestAnalysis(postId, postUrl, attempt + 1);
+              resolve(result);
+            } catch (e) {
+              reject(e);
+            }
+          } else {
+            reject(new Error(errorMsg));
+          }
         }
       });
     });
