@@ -207,9 +207,10 @@ function checkActiveOperation() {
  * Updates download progress display
  */
 function updateProgress() {
-  chrome.storage.local.get(['totalDownloads', 'downloadProgress'], (result) => {
+  chrome.storage.local.get(['totalDownloads', 'downloadProgress', 'downloadCounts'], (result) => {
     const total = result.totalDownloads || 0;
     const progress = result.downloadProgress || {};
+    const counts = result.downloadCounts;
     const completed = Object.values(progress).filter(s => s === 'complete').length;
 
     const progressElement = document.getElementById('progress');
@@ -221,12 +222,18 @@ function updateProgress() {
       const completed = statusValues.filter(s => s === 'complete').length;
       const failed = statusValues.filter(s => s === 'failed').length;
 
-      progressText.textContent = `${completed} complete${failed > 0 ? `, ${failed} failed` : ''} of ${total}`;
+      let text = `${completed} complete${failed > 0 ? `, ${failed} failed` : ''} of ${total}`;
+
+      if (counts) {
+        text += ` (${counts.image} Images, ${counts.video} Videos)`;
+      }
+
+      progressText.textContent = text;
 
       // Clear progress after all (including failures) are finished
       if (completed + failed === total) {
         setTimeout(() => {
-          chrome.storage.local.remove(['totalDownloads', 'downloadProgress']);
+          chrome.storage.local.remove(['totalDownloads', 'downloadProgress', 'downloadCounts']);
           progressElement.style.display = 'none';
         }, PROGRESS_CLEAR_DELAY);
       }

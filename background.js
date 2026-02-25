@@ -294,6 +294,15 @@ async function scrapeAndIntercept(mode) {
 
   let buttonFound = false;
   if (dlBtn) {
+    if ((dlBtn.tagName === 'A' || dlBtn.hasAttribute('href')) && dlBtn.href) {
+      let current = [];
+      try { current = JSON.parse(relay.dataset.collectedUrls || '[]'); } catch (e) { }
+      if (!current.includes(dlBtn.href)) {
+        current.push(dlBtn.href);
+        relay.dataset.collectedUrls = JSON.stringify(current);
+        relay.setAttribute('data-timestamp', Date.now());
+      }
+    }
     dlBtn.click();
     buttonFound = true;
   }
@@ -390,7 +399,16 @@ function switchTab() {
  */
 async function handleDownloads(media) {
   if (!Array.isArray(media) || media.length === 0) throw new Error('No media provided');
-  await chrome.storage.local.set({ totalDownloads: media.length, downloadProgress: {} });
+
+  const videoCount = media.filter(item => item.filename && item.filename.toLowerCase().endsWith('.mp4')).length;
+  const imageCount = media.length - videoCount;
+
+  await chrome.storage.local.set({
+    totalDownloads: media.length,
+    downloadProgress: {},
+    downloadCounts: { video: videoCount, image: imageCount }
+  });
+
   media.forEach((item, index) => {
     setTimeout(() => {
       downloadFile(item);
