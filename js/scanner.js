@@ -7,19 +7,12 @@ var MediaScanner = {
    * Phase 1: Expand Page and Scan (Visual Only)
    */
   async scanPage(visualizeOnly = false) {
-    // console.log('[Scanner] Phase 1: Scanning Current View (No Scroll)...');
-
-    // 1. Expand the page fully first (Pre-roll) -> DISABLED by User Request
-    // await this.expandPageToBottom();
-
-
     // 2. Once fully expanded, scan the DOM
-    console.log('[Scanner] Expansion complete. Starting Scan...');
+    window.Utils.Logger.log('[Scanner] Expansion complete. Starting Scan...');
     const foundItems = this.collectVisibleItems();
 
-    // LOGGING: Minimal
-    // console.log(`[Scanner] 📊 Total IDs Collected: ${foundItems.length}`);
-    console.log(`[Scanner] ⏳ Preparing deep analysis...`);
+    window.Utils.Logger.log(`[Scanner] 📊 Total IDs Collected: ${foundItems.length} 件のアイテムを認識しました`);
+    window.Utils.Logger.log(`[Scanner] ⏳ Preparing deep analysis...`);
 
     return foundItems;
   },
@@ -112,7 +105,7 @@ var MediaScanner = {
     const foundItems = [];
 
     const cards = document.querySelectorAll(window.SELECTORS.CARD);
-    console.log(`[Scanner] Analyzing ${cards.length} DOM elements...`);
+    window.Utils.Logger.log(`[Scanner] DOM上で ${cards.length} 件のアイテムを取得しました。抽出を開始します...`);
 
     for (let idx = 0; idx < cards.length; idx++) {
       const card = cards[idx];
@@ -132,9 +125,11 @@ var MediaScanner = {
           // type: 'unknown', // We don't know yet. Analysis will determine.
           details: {}
         });
+        window.Utils.Logger.log(`[Scanner] リストに追加: ${postData.id} (URL: ${postData.url})`);
       }
     }
 
+    window.Utils.Logger.log(`[Scanner] 重複排除後、最終的に ${foundItems.length} 件のアイテムを認識しました。`);
     return foundItems;
   },
 
@@ -145,7 +140,7 @@ var MediaScanner = {
     // We must analyze ALL items via API to ensure we don't miss videos.
     // Previous "Static Image" optimization is removed.
 
-    console.log(`[Scanner] 🕵️ Starting Strict Analysis for ${items.length} items...`);
+    window.Utils.Logger.log(`[Scanner] 🕵️ Starting Strict Analysis for ${items.length} items...`);
 
     for (let i = 0; i < items.length; i++) {
       if (window.ProgressModal.isCancelled()) break;
@@ -187,6 +182,10 @@ var MediaScanner = {
     // Filter results based on requested type
     let finalResults = Array.from(allMediaData.values());
 
+    const rawVideoCount = finalResults.filter(item => item.filename.endsWith('.mp4')).length;
+    const rawImageCount = finalResults.length - rawVideoCount;
+    window.Utils.Logger.log(`[Scanner] 🔎 [フィルタ前] 全アイテムから抽出されたメディア総数: ${finalResults.length} (動画: ${rawVideoCount}, 静止画: ${rawImageCount})`);
+
     if (filterType === 'saveImages') {
       finalResults = finalResults.filter(item => !item.filename.toLowerCase().endsWith('.mp4'));
     } else if (filterType === 'saveVideos') {
@@ -197,9 +196,9 @@ var MediaScanner = {
     const imageCount = finalResults.length - videoCount;
 
     // DETAILED LOGGING as requested by User
-    console.log(`[Scanner] 📦 Total Media Ready for Download: ${finalResults.length}`);
-    console.log(`[Scanner] 📹 Videos to Download: ${videoCount}`);
-    console.log(`[Scanner] 🖼️ Images to Download: ${imageCount}`);
+    window.Utils.Logger.log(`[Scanner] 📦 [フィルタ後] ダウンロード対象(${filterType}) メディア数: ${finalResults.length}`);
+    window.Utils.Logger.log(`[Scanner] 📹 DL予定 動画: ${videoCount}`);
+    window.Utils.Logger.log(`[Scanner] 🖼️ DL予定 静止画: ${imageCount}`);
 
     return finalResults;
   },

@@ -4,6 +4,22 @@
 
 var Utils = {
   /**
+   * Logger utility to control debug output
+   */
+  Logger: {
+    DEBUG_MODE: false, // Set to true to enable detailed debug logs
+    log(...args) {
+      if (this.DEBUG_MODE) console.log(...args);
+    },
+    warn(...args) {
+      if (this.DEBUG_MODE) console.warn(...args);
+    },
+    error(...args) {
+      console.error(...args); // Errors should usually still be logged
+    }
+  },
+
+  /**
    * Extract UUID from a URL
    */
   extractPostId(url) {
@@ -29,14 +45,14 @@ var Utils = {
       const links = element.querySelectorAll('a');
       for (const link of links) {
         if (!link.href || link.href.includes('/profile/')) continue;
-        
+
         const match = link.href.match(/\/(?:post|status|imagine\/post)\/([0-9a-f-]{36}|[0-9a-f]{8,})/i);
         if (match) {
           const uuid = match[1].toLowerCase();
           const urlObj = new URL(link.href);
           // Create a unique key using UUID + query params (to distinguish variations)
-          const uniqueId = uuid + urlObj.search; 
-          
+          const uniqueId = uuid + urlObj.search;
+
           return {
             id: uniqueId,
             url: link.href, // Preserve the full URL including ?index=...
