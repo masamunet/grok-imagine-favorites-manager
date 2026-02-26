@@ -105,21 +105,20 @@ async function analyzePostInTab(postId, postUrl) {
       return [];
     }
 
-    // --- STEP 1: COLLECT VIDEO ASSETS ---
+    // --- STEP 1: COLLECT VISIBLE ASSETS (Initial View) ---
     try {
-      const vResults = await chrome.scripting.executeScript({
+      const initialResults = await chrome.scripting.executeScript({
         target: { tabId },
-        func: scrapeAndIntercept,
-        args: ['video']
+        func: scrapeAndIntercept
       });
-      if (vResults && vResults[0] && vResults[0].result) {
-        vResults[0].result.forEach(u => collectedMedia.add(u));
+      if (initialResults && initialResults[0] && initialResults[0].result) {
+        initialResults[0].result.forEach(u => collectedMedia.add(u));
       }
     } catch (e) {
-      console.warn(`[Background] Failed to scrape video (Tab ${tabId}):`, e);
+      console.warn(`[Background] Failed to scrape initial view (Tab ${tabId}):`, e);
     }
 
-    // --- STEP 2: SWITCH TO IMAGE/VARIATIONS TAB ---
+    // --- STEP 2: SWITCH TAB IF AVAILABLE (Variations etc) ---
     try {
       await chrome.scripting.executeScript({
         target: { tabId },
@@ -130,18 +129,17 @@ async function analyzePostInTab(postId, postUrl) {
       console.warn(`[Background] Failed to switch tab (Tab ${tabId}):`, e);
     }
 
-    // --- STEP 3: COLLECT IMAGE ASSETS (AND ANY NEW TRAFFIC) ---
+    // --- STEP 3: COLLECT ASSETS AGAIN (After possible tab switch) ---
     try {
-      const iResults = await chrome.scripting.executeScript({
+      const secondaryResults = await chrome.scripting.executeScript({
         target: { tabId },
-        func: scrapeAndIntercept,
-        args: ['image']
+        func: scrapeAndIntercept
       });
-      if (iResults && iResults[0] && iResults[0].result) {
-        iResults[0].result.forEach(u => collectedMedia.add(u));
+      if (secondaryResults && secondaryResults[0] && secondaryResults[0].result) {
+        secondaryResults[0].result.forEach(u => collectedMedia.add(u));
       }
     } catch (e) {
-      console.warn(`[Background] Failed to scrape images (Tab ${tabId}):`, e);
+      console.warn(`[Background] Failed to scrape secondary view (Tab ${tabId}):`, e);
     }
 
     // Cleanup
@@ -267,10 +265,9 @@ async function scrapeAndIntercept(mode) {
   // Reset collected urls
   relay.dataset.collectedUrls = '[]';
 
-  // Helper to find button
-  const findBtn = () => {
+  const findAllBtns = () => {
     const btns = Array.from(document.querySelectorAll('button, a, [role="button"]'));
-    return btns.find(b => {
+    return btns.filter(b => {
       const label = (b.ariaLabel || "").toLowerCase();
       const text = (b.innerText || "").toLowerCase();
       const title = (b.title || "").toLowerCase();
@@ -282,28 +279,34 @@ async function scrapeAndIntercept(mode) {
     });
   };
 
-  // 1. Wait for Button (Hydration/Render check) - Max 1.5s
-  let dlBtn = findBtn();
-  if (!dlBtn) {
+  // 1. Wait for Buttons (Hydration/Render check) - Max 1.5s
+  let dlBtns = findAllBtns();
+  if (dlBtns.length === 0) {
     for (let i = 0; i < 15; i++) { // 100ms * 15 = 1.5s
       await new Promise(r => setTimeout(r, 100));
-      dlBtn = findBtn();
-      if (dlBtn) break;
+      dlBtns = findAllBtns();
+      if (dlBtns.length > 0) break;
     }
   }
 
   let buttonFound = false;
-  if (dlBtn) {
-    if ((dlBtn.tagName === 'A' || dlBtn.hasAttribute('href')) && dlBtn.href) {
-      let current = [];
-      try { current = JSON.parse(relay.dataset.collectedUrls || '[]'); } catch (e) { }
-      if (!current.includes(dlBtn.href)) {
-        current.push(dlBtn.href);
-        relay.dataset.collectedUrls = JSON.stringify(current);
-        relay.setAttribute('data-timestamp', Date.now());
+  if (dlBtns.length > 0) {
+    dlBtns.forEach(dlBtn => {
+      if ((dlBtn.tagName === 'A' || dlBtn.hasAttribute('href')) && dlBtn.href) {
+        let current = [];
+        try { current = JSON.parse(relay.dataset.collectedUrls || '[]'); } catch (e) { }
+        if (!current.includes(dlBtn.href)) {
+          current.push(dlBtn.href);
+          relay.dataset.collectedUrls = JSON.stringify(current);
+          relay.setAttribute('data-timestamp', Date.now());
+        }
       }
-    }
-    dlBtn.click();
+      try {
+        dlBtn.click();
+      } catch (e) {
+        // Ignore click errors for invisible/disabled buttons
+      }
+    });
     buttonFound = true;
   }
 
