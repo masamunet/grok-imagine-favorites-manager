@@ -55,7 +55,7 @@ var MediaScanner = {
     }
 
     // 2. Scan the DOM
-    window.Utils.Logger.log('[Scanner V5-CSP-BYPASS] Starting Scan... Version: 9944');
+    window.Utils.Logger.log('[Scanner] Starting Scan...');
     const foundItems = this.collectVisibleItems();
 
     if (foundItems.length === 0) {
@@ -171,12 +171,7 @@ var MediaScanner = {
       const postData = window.Utils.extractPostDataFromElement(el);
 
       if (!postData) {
-        window.Utils.Logger.warn(`[Scanner] 抽出失敗 (V3): 要素<${el.tagName}> からIDを見つけられませんでした。`);
-        // Debug dump of the parent hierarchy
-        try {
-          const p = el.parentElement ? (el.parentElement.parentElement || el.parentElement) : el;
-          console.warn(`[Scanner Debug] HTML Dump for failed element:`, p.outerHTML.substring(0, 1500));
-        } catch (e) { }
+        window.Utils.Logger.warn(`[Scanner] 抽出失敗: 要素<${el.tagName}> からIDを見つけられませんでした。`);
         continue;
       }
 
