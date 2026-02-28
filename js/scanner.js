@@ -4,12 +4,63 @@
 
 var MediaScanner = {
   /**
+   * Requests background.js to inject a script into the MAIN world to extract React Fiber IDs and attach them as data attributes.
+   * This is required because Content Scripts (Isolated World) cannot see Javascript properties set by the page,
+   * and inline scripts are blocked by CSP.
+   */
+  async injectFiberExtractor() {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage({ action: 'extractFiber' }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.warn('[Scanner] Failed to communicate with background for fiber extraction:', chrome.runtime.lastError.message);
+          resolve(false);
+          return;
+        }
+        if (response && response.success) {
+          resolve(true);
+        } else {
+          console.warn('[Scanner] Fiber extraction failed in background:', response?.error);
+          resolve(false);
+        }
+      });
+    });
+  },
+
+  /**
    * Phase 1: Expand Page and Scan (Visual Only)
    */
   async scanPage(visualizeOnly = false) {
-    // 2. Once fully expanded, scan the DOM
-    window.Utils.Logger.log('[Scanner] Expansion complete. Starting Scan...');
+    if (window.ProgressModal) window.ProgressModal.update(10, 'Scanning items...');
+
+    // SPA transition support: The elements are heavily virtualized.
+    // Waiting is not the solution, we must grab them immediately and extract via deep Fiber.
+    await window.Utils.sleep(800); // Give a brief moment for the view to switch
+
+    // PRE-PROCESSING: Inject Fiber extraction script into MAIN world via background.js
+    try {
+      await this.injectFiberExtractor();
+    } catch (e) {
+      console.warn('[Scanner] Main world injection failed:', e);
+    }
+
+    const mediaElements = Array.from(document.querySelectorAll(
+      'img[alt*="Generated" i], video, [data-testid="video-player"], [data-testid="video-component"], .video-js'
+    )).filter(el => {
+      if (el.tagName === 'IMG' && el.src && el.src.includes('/profile/')) return false;
+      return true;
+    });
+
+    if (mediaElements.length === 0) {
+      throw new Error(`アイテムが見つかりませんでした。「Download」を再試行するか、ページをリロードしてください。`);
+    }
+
+    // 2. Scan the DOM
+    window.Utils.Logger.log('[Scanner V5-CSP-BYPASS] Starting Scan... Version: 9944');
     const foundItems = this.collectVisibleItems();
+
+    if (foundItems.length === 0) {
+      throw new Error(`アイテムが見つかりませんでした。「Download」を再試行するか、ページをリロードしてください。`);
+    }
 
     window.Utils.Logger.log(`[Scanner] 📊 Total IDs Collected: ${foundItems.length} 件のアイテムを認識しました`);
     window.Utils.Logger.log(`[Scanner] ⏳ Preparing deep analysis...`);
@@ -104,28 +155,58 @@ var MediaScanner = {
     const processedPostIds = new Set();
     const foundItems = [];
 
-    const cards = document.querySelectorAll(window.SELECTORS.CARD);
-    window.Utils.Logger.log(`[Scanner] DOM上で ${cards.length} 件のアイテムを取得しました。抽出を開始します...`);
+    // 1. Direct search for media elements (bottom-up approach to avoid class name issues in SPA)
+    const mediaElements = Array.from(document.querySelectorAll(
+      'img[alt*="Generated" i], video, [data-testid="video-player"], [data-testid="video-component"], .video-js'
+    )).filter(el => {
+      // Filter out clear noise
+      if (el.tagName === 'IMG' && el.src && el.src.includes('/profile/')) return false;
+      return true;
+    });
 
-    for (let idx = 0; idx < cards.length; idx++) {
-      const card = cards[idx];
-      const postData = window.Utils.extractPostDataFromElement(card);
+    window.Utils.Logger.log(`[Scanner] DOM上で ${mediaElements.length} 件のメディア要素候補を取得しました。抽出を開始します...`);
 
-      if (!postData) continue;
+    for (let idx = 0; idx < mediaElements.length; idx++) {
+      const el = mediaElements[idx];
+      const postData = window.Utils.extractPostDataFromElement(el);
 
-      // CRITICAL: NO DOM CLASSIFICATION
-      // User requested to rely 100% on detailed page analysis (Tabs).
-      // We purely collect IDs here.
+      if (!postData) {
+        window.Utils.Logger.warn(`[Scanner] 抽出失敗 (V3): 要素<${el.tagName}> からIDを見つけられませんでした。`);
+        // Debug dump of the parent hierarchy
+        try {
+          const p = el.parentElement ? (el.parentElement.parentElement || el.parentElement) : el;
+          console.warn(`[Scanner Debug] HTML Dump for failed element:`, p.outerHTML.substring(0, 1500));
+        } catch (e) { }
+        continue;
+      }
 
       if (!processedPostIds.has(postData.id)) {
         processedPostIds.add(postData.id);
         foundItems.push({
           id: postData.id,
           url: postData.url,
-          // type: 'unknown', // We don't know yet. Analysis will determine.
           details: {}
         });
-        window.Utils.Logger.log(`[Scanner] リストに追加: ${postData.id} (URL: ${postData.url})`);
+        window.Utils.Logger.log(`[Scanner] リストに追加: ${postData.id} (抽出戦略: ${postData.strategy})`);
+      } else {
+        window.Utils.Logger.warn(`[Scanner] 重複スキップ: 要素<${el.tagName}>から抽出されたID (${postData.id}) は既に別要素で取得済みです。`);
+      }
+    }
+
+    // 2. Fallback: Search A tags directly if still low/zero
+    if (foundItems.length === 0) {
+      const links = document.querySelectorAll('a[href*="/post/"]');
+      for (const link of links) {
+        if (link.href.includes('/profile/')) continue;
+        const postData = window.Utils.extractPostDataFromElement(link);
+        if (postData && !processedPostIds.has(postData.id)) {
+          processedPostIds.add(postData.id);
+          foundItems.push({
+            id: postData.id,
+            url: postData.url,
+            details: {}
+          });
+        }
       }
     }
 

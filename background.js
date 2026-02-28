@@ -62,6 +62,81 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }, delay);
     return true;
   }
+
+  if (request.action === 'extractFiber') {
+    try {
+      chrome.scripting.executeScript({
+        target: { tabId: sender.tab.id },
+        func: () => {
+          function findUUID(obj, depth = 0) {
+            if (depth > 5 || !obj) return null;
+            if (typeof obj === 'string') {
+              const m = obj.match(/\/(?:post|status|imagine\/post)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+              if (m) return m[1].toLowerCase();
+              return null;
+            }
+            if (typeof obj === 'object') {
+              if (obj.postId && typeof obj.postId === 'string') {
+                const m = obj.postId.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+                if (m) return m[0].toLowerCase();
+              }
+              if (obj.id && typeof obj.id === 'string') {
+                const m = obj.id.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+                if (m) return m[0].toLowerCase();
+              }
+              for (const k in obj) {
+                if (k === 'children' || k === '$$typeof' || k === 'styles' || k === 'className' || k === 'sx') continue;
+                try {
+                  const res = findUUID(obj[k], depth + 1);
+                  if (res) return res;
+                } catch (e) { }
+              }
+            }
+            return null;
+          }
+
+          const elements = document.querySelectorAll('img, video, [data-testid="video-player"], [data-testid="video-component"]');
+          for (let el of elements) {
+            try {
+              let domNode = el;
+              let found = false;
+              for (let domLevel = 0; domLevel < 10; domLevel++) {
+                if (!domNode) break;
+                const reactPropsKey = Object.keys(domNode).find(key => key.startsWith('__reactFiber$'));
+                if (reactPropsKey) {
+                  let fiberNode = domNode[reactPropsKey];
+                  for (let i = 0; i < 50; i++) {
+                    if (!fiberNode) break;
+                    if (fiberNode.memoizedProps) {
+                      const id = findUUID(fiberNode.memoizedProps);
+                      if (id) {
+                        el.setAttribute('data-grok-extracted-id', id);
+                        found = true;
+                        break;
+                      }
+                    }
+                    fiberNode = fiberNode.return;
+                  }
+                }
+                if (found) break;
+                domNode = domNode.parentElement;
+              }
+            } catch (err) { }
+          }
+        },
+        world: 'MAIN'
+      }).then(() => {
+        sendResponse({ success: true });
+      }).catch(err => {
+        console.error('[Background] Fiber extraction failed:', err);
+        sendResponse({ success: false, error: err.message });
+      });
+    } catch (error) {
+      console.error('[Background] Fiber extraction error:', error);
+      sendResponse({ success: false, error: error.message });
+    }
+    return true;
+  }
 });
 
 
