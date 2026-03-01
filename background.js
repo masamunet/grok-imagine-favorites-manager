@@ -229,7 +229,8 @@ async function analyzePostInTab(postId, postUrl) {
       .filter(url => url && url.length > 5)
       .map(url => {
         const id = extractPostIdFromUrl(url) || postId;
-        const type = url.includes('.mp4') ? 'video' : 'image';
+        const isVideo = url.includes('.mp4') || url.includes('video');
+        const type = isVideo ? 'video' : 'image';
         return { url, id, type };
       });
 
@@ -296,7 +297,8 @@ function networkSniffer() {
     }
 
     // Check for interesting extensions
-    if (url.includes('.mp4') || url.includes('.jpg') || url.includes('.png') || url.includes('.webp') || url.includes('blob:')) {
+    if (url.includes('.mp4') || url.includes('.jpg') || url.includes('.png') || url.includes('.webp')) {
+
 
       let current = [];
       try { current = JSON.parse(relay.dataset.collectedUrls || '[]'); } catch (e) { }
@@ -322,6 +324,18 @@ function networkSniffer() {
     pushUrl(url);
     return originalOpen.apply(this, [method, url, ...rest]);
   };
+
+  // Prevent native duplicate downloads from programmed clicks
+  const originalClick = HTMLElement.prototype.click;
+  HTMLElement.prototype.click = function (...args) {
+    if (this.tagName === 'A' && this.hasAttribute('download')) {
+      const href = this.href;
+      if (href) pushUrl(href);
+      return; // Do not trigger native download
+    }
+    return originalClick.apply(this, args);
+  };
+
 
 
 }
