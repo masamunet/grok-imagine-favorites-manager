@@ -47,7 +47,7 @@ function checkIfOnFavoritesPage() {
 
     const tab = tabs[0];
     const url = tab.url || '';
-    const isFavoritesPage = url.includes('grok.com/imagine/favorites');
+    const isFavoritesPage = url.includes('grok.com/imagine/saved');
 
     if (!isFavoritesPage) {
       // Disable all action buttons
