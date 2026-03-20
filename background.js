@@ -501,16 +501,17 @@ async function handleDownloads(media) {
     downloadCounts: { video: videoCount, image: imageCount }
   });
 
+  const batchTimestamp = new Date();
   media.forEach((item, index) => {
     setTimeout(() => {
-      downloadFile(item);
+      downloadFile(item, batchTimestamp);
     }, index * DOWNLOAD_CONFIG.RATE_LIMIT_MS);
   });
 }
 
-function downloadFile(item) {
+function downloadFile(item, timestamp) {
   if (!item.url || !item.filename) return;
-  const now = new Date();
+  const now = timestamp || new Date();
   const yyyy = now.getFullYear();
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const dd = String(now.getDate()).padStart(2, '0');
