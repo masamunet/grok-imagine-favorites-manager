@@ -501,18 +501,26 @@ async function handleDownloads(media) {
     downloadCounts: { video: videoCount, image: imageCount }
   });
 
+  const batchTimestamp = new Date();
   media.forEach((item, index) => {
     setTimeout(() => {
-      downloadFile(item);
+      downloadFile(item, batchTimestamp);
     }, index * DOWNLOAD_CONFIG.RATE_LIMIT_MS);
   });
 }
 
-function downloadFile(item) {
+function downloadFile(item, timestamp) {
   if (!item.url || !item.filename) return;
+  const now = timestamp || new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const hh = String(now.getHours()).padStart(2, '0');
+  const min = String(now.getMinutes()).padStart(2, '0');
+  const datePath = `${yyyy}_${mm}_${dd}/${hh}_${min}`;
   chrome.downloads.download({
     url: item.url,
-    filename: `${DOWNLOAD_CONFIG.FOLDER}/${item.filename}`,
+    filename: `${DOWNLOAD_CONFIG.FOLDER}/${datePath}/${item.filename}`,
     saveAs: false
   });
 }

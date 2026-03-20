@@ -74,7 +74,7 @@ Alternatively, you can download the repository as a ZIP file:
 ## Usage
 
 1. Log in to your account
-2. Navigate to https://grok.com/imagine/favorites
+2. Navigate to https://grok.com/imagine/saved
 3. Click the extension icon
 4. Choose your desired action
 
@@ -133,7 +133,7 @@ Videos are automatically named to match their corresponding image files (using t
 ## Important Notes
 
 - **⚠️ Grok Imagine is constantly changing** - This extension may break with platform updates
-- The extension works on https://grok.com/imagine/favorites
+- The extension works on https://grok.com/imagine/saved
 - No manual scrolling needed - the extension handles it automatically
 - Video filenames automatically match their corresponding image names for easy pairing
 - **Only the most recently generated video is processed** - Earlier video versions are not accessible

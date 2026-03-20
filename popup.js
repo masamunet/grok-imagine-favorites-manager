@@ -47,7 +47,7 @@ function checkIfOnFavoritesPage() {
 
     const tab = tabs[0];
     const url = tab.url || '';
-    const isFavoritesPage = url.includes('grok.com/imagine/favorites');
+    const isFavoritesPage = url.includes('grok.com/imagine/saved');
 
     if (!isFavoritesPage) {
       // Disable all action buttons
@@ -62,7 +62,7 @@ function checkIfOnFavoritesPage() {
           button.disabled = true;
           button.style.opacity = '0.5';
           button.style.cursor = 'not-allowed';
-          button.title = 'Only available on grok.com/imagine/favorites page';
+          button.title = 'Only available on grok.com/imagine/saved page';
         }
       });
 
@@ -71,7 +71,7 @@ function checkIfOnFavoritesPage() {
       if (container) {
         const warning = document.createElement('div');
         warning.style.cssText = 'background: #fff3cd; border: 1px solid #ffc107; color: #856404; padding: 10px; margin-bottom: 10px; border-radius: 4px; font-size: 12px; text-align: center;';
-        warning.textContent = '⚠️ Navigate to grok.com/imagine/favorites to use this extension';
+        warning.textContent = '⚠️ Navigate to grok.com/imagine/saved to use this extension';
         container.insertBefore(warning, container.firstChild);
       }
     }
