@@ -43,11 +43,23 @@ document.addEventListener('DOMContentLoaded', () => {
  */
 function checkIfOnFavoritesPage() {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (!tabs || tabs.length === 0) return;
+    console.log('[GrokDebug:Popup] checkIfOnFavoritesPage called');
+    console.log('[GrokDebug:Popup] tabs query result:', JSON.stringify(tabs?.map(t => ({ id: t.id, url: t.url, title: t.title, status: t.status }))));
+    if (!tabs || tabs.length === 0) {
+      console.warn('[GrokDebug:Popup] No tabs found!');
+      return;
+    }
 
     const tab = tabs[0];
     const url = tab.url || '';
-    const isFavoritesPage = url.includes('grok.com/imagine/saved');
+    console.log('[GrokDebug:Popup] tab.url:', url);
+    console.log('[GrokDebug:Popup] tab.url type:', typeof tab.url);
+    console.log('[GrokDebug:Popup] tab.pendingUrl:', tab.pendingUrl);
+    console.log('[GrokDebug:Popup] tab.title:', tab.title);
+    const isFavoritesPage = url.includes('grok.com/imagine/favorites') || url.includes('grok.com/imagine/saved');
+    console.log('[GrokDebug:Popup] isFavoritesPage:', isFavoritesPage);
+    console.log('[GrokDebug:Popup] includes favorites:', url.includes('grok.com/imagine/favorites'));
+    console.log('[GrokDebug:Popup] includes saved:', url.includes('grok.com/imagine/saved'));
 
     if (!isFavoritesPage) {
       // Disable all action buttons
@@ -84,19 +96,23 @@ function checkIfOnFavoritesPage() {
  * @param {string} action - Action to perform
  */
 function sendAction(action) {
+  console.log('[GrokDebug:Popup] sendAction called with:', action);
   chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
     if (!tabs || tabs.length === 0) {
-      console.error('No active tab found');
+      console.error('[GrokDebug:Popup] No active tab found');
       return;
     }
 
     const tab = tabs[0];
+    console.log('[GrokDebug:Popup] Sending to tab:', tab.id, 'url:', tab.url);
 
     // Try to ping the content script first
+    console.log('[GrokDebug:Popup] Pinging content script...');
     chrome.tabs.sendMessage(tab.id, { action: 'ping' }, async (response) => {
+      console.log('[GrokDebug:Popup] Ping response:', response, 'lastError:', chrome.runtime.lastError?.message);
       if (chrome.runtime.lastError) {
         // Content script not loaded, inject it
-        console.log('Content script not loaded, injecting...');
+        console.log('[GrokDebug:Popup] Content script not loaded, injecting...');
         try {
           await chrome.scripting.executeScript({
             target: { tabId: tab.id },

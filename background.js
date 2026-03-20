@@ -43,15 +43,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // proxyLogInternal listener removed
 
   if (request.action === 'analyzePost') {
+    console.log(`[GrokDebug:Background] analyzePost received: postId=${request.postId} url=${request.url}`);
     // IGNORE requests during startup grace period to prevent "Tabs cannot be edited" storm
     if (Date.now() - START_TIME < STARTUP_DELAY) {
-      console.warn('[Background] Ignoring analysis request during startup grace period.');
+      console.warn('[GrokDebug:Background] Ignoring analysis request during startup grace period.');
       sendResponse({ success: false, error: 'Extension warming up' });
       return true;
     }
 
     // Add jitter to prevent thundering herd
     const delay = Math.floor(Math.random() * 2000); // 0-2s delay
+    console.log(`[GrokDebug:Background] analyzePost: applying ${delay}ms jitter`);
     setTimeout(() => {
       analyzePostInTab(request.postId, request.url)
         .then(result => sendResponse({ success: true, data: result }))
@@ -64,6 +66,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'extractFiber') {
+    console.log('[GrokDebug:Background] extractFiber received for tab:', sender.tab?.id, 'url:', sender.tab?.url);
     try {
       chrome.scripting.executeScript({
         target: { tabId: sender.tab.id },
@@ -126,9 +129,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         },
         world: 'MAIN'
       }).then(() => {
+        console.log('[GrokDebug:Background] extractFiber: script executed successfully');
         sendResponse({ success: true });
       }).catch(err => {
-        console.error('[Background] Fiber extraction failed:', err);
+        console.error('[GrokDebug:Background] extractFiber: script execution failed:', err.message);
         sendResponse({ success: false, error: err.message });
       });
     } catch (error) {

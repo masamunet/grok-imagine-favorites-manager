@@ -9,17 +9,19 @@ var MediaScanner = {
    * and inline scripts are blocked by CSP.
    */
   async injectFiberExtractor() {
+    console.log('[GrokDebug:Scanner] injectFiberExtractor: sending extractFiber message to background...');
     return new Promise((resolve) => {
       chrome.runtime.sendMessage({ action: 'extractFiber' }, (response) => {
         if (chrome.runtime.lastError) {
-          console.warn('[Scanner] Failed to communicate with background for fiber extraction:', chrome.runtime.lastError.message);
+          console.warn('[GrokDebug:Scanner] injectFiberExtractor: lastError:', chrome.runtime.lastError.message);
           resolve(false);
           return;
         }
+        console.log('[GrokDebug:Scanner] injectFiberExtractor: response:', JSON.stringify(response));
         if (response && response.success) {
           resolve(true);
         } else {
-          console.warn('[Scanner] Fiber extraction failed in background:', response?.error);
+          console.warn('[GrokDebug:Scanner] injectFiberExtractor: failed:', response?.error);
           resolve(false);
         }
       });
@@ -30,19 +32,25 @@ var MediaScanner = {
    * Phase 1: Expand Page and Scan (Visual Only)
    */
   async scanPage(visualizeOnly = false) {
+    const t0 = performance.now();
+    console.log(`[GrokDebug:Scanner] scanPage START visualizeOnly=${visualizeOnly} t=0ms`);
     if (window.ProgressModal) window.ProgressModal.update(10, 'Scanning items...');
 
     // SPA transition support: The elements are heavily virtualized.
-    // Waiting is not the solution, we must grab them immediately and extract via deep Fiber.
-    await window.Utils.sleep(800); // Give a brief moment for the view to switch
+    console.log(`[GrokDebug:Scanner] Sleeping 800ms for SPA transition... t=${(performance.now()-t0).toFixed(0)}ms`);
+    await window.Utils.sleep(800);
+    console.log(`[GrokDebug:Scanner] Sleep done. t=${(performance.now()-t0).toFixed(0)}ms`);
 
     // PRE-PROCESSING: Inject Fiber extraction script into MAIN world via background.js
+    console.log(`[GrokDebug:Scanner] Injecting Fiber Extractor... t=${(performance.now()-t0).toFixed(0)}ms`);
     try {
-      await this.injectFiberExtractor();
+      const fiberResult = await this.injectFiberExtractor();
+      console.log(`[GrokDebug:Scanner] Fiber Extractor result: ${fiberResult} t=${(performance.now()-t0).toFixed(0)}ms`);
     } catch (e) {
-      console.warn('[Scanner] Main world injection failed:', e);
+      console.warn(`[GrokDebug:Scanner] Main world injection failed: ${e.message} t=${(performance.now()-t0).toFixed(0)}ms`);
     }
 
+    console.log(`[GrokDebug:Scanner] Querying media elements... t=${(performance.now()-t0).toFixed(0)}ms`);
     const mediaElements = Array.from(document.querySelectorAll(
       'img[alt*="Generated" i], video, [data-testid="video-player"], [data-testid="video-component"], .video-js'
     )).filter(el => {
@@ -50,13 +58,32 @@ var MediaScanner = {
       return true;
     });
 
+    console.log(`[GrokDebug:Scanner] Found ${mediaElements.length} media elements in DOM. t=${(performance.now()-t0).toFixed(0)}ms`);
+    if (mediaElements.length > 0) {
+      mediaElements.forEach((el, i) => {
+        console.log(`[GrokDebug:Scanner]   [${i}] <${el.tagName}> src=${el.src?.substring(0, 80) || 'N/A'} alt=${el.alt?.substring(0, 40) || 'N/A'}`);
+      });
+    }
+
     if (mediaElements.length === 0) {
+      // 追加デバッグ: ページのDOM構造をダンプ
+      console.log(`[GrokDebug:Scanner] NO MEDIA FOUND. Dumping page structure...`);
+      console.log(`[GrokDebug:Scanner] document.title: ${document.title}`);
+      console.log(`[GrokDebug:Scanner] All img count: ${document.querySelectorAll('img').length}`);
+      console.log(`[GrokDebug:Scanner] All video count: ${document.querySelectorAll('video').length}`);
+      console.log(`[GrokDebug:Scanner] All a[href*="post"] count: ${document.querySelectorAll('a[href*="post"]').length}`);
+      console.log(`[GrokDebug:Scanner] body children count: ${document.body?.children.length}`);
+      const allImgs = document.querySelectorAll('img');
+      allImgs.forEach((img, i) => {
+        if (i < 10) console.log(`[GrokDebug:Scanner]   img[${i}] src=${img.src?.substring(0, 100)} alt=${img.alt?.substring(0, 50)}`);
+      });
       throw new Error(`アイテムが見つかりませんでした。「Download」を再試行するか、ページをリロードしてください。`);
     }
 
     // 2. Scan the DOM
-    window.Utils.Logger.log('[Scanner] Starting Scan...');
+    console.log(`[GrokDebug:Scanner] Starting collectVisibleItems... t=${(performance.now()-t0).toFixed(0)}ms`);
     const foundItems = this.collectVisibleItems();
+    console.log(`[GrokDebug:Scanner] collectVisibleItems returned ${foundItems.length} items. t=${(performance.now()-t0).toFixed(0)}ms`);
 
     if (foundItems.length === 0) {
       throw new Error(`アイテムが見つかりませんでした。「Download」を再試行するか、ページをリロードしてください。`);
