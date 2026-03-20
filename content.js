@@ -2,8 +2,7 @@
  * Grok Imagine Favorites Manager - Content Script (Entry Point)
  */
 
-console.log('[GrokDebug:Content] Content script initialized at', window.location.href);
-console.log('[GrokDebug:Content] Timestamp:', new Date().toISOString());
+// Debug logs controlled by Utils.Logger.DEBUG_MODE
 
 // Initialize simple modules map for debugging if needed
 window.GrokModules = {
@@ -19,7 +18,7 @@ window.GrokModules = {
  */
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   const { action } = request;
-  console.log('[GrokDebug:Content] Message received:', action);
+  if (window.Utils) window.Utils.Logger.log('[Content] Message received:', action);
 
   if (action === 'ping') {
     // Basic connectivity check
@@ -69,31 +68,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
  * High-level flow for saving media
  */
 async function handleSaveFlow(type) {
-  const t0 = performance.now();
-  console.log(`[GrokDebug:Content] handleSaveFlow START type=${type} t=0ms`);
   try {
     if (!window.ProgressModal) {
-      console.error('[GrokDebug:Content] ProgressModal is null/undefined!');
       throw new Error('UI Module not loaded. Please refresh the page.');
     }
-    console.log(`[GrokDebug:Content] ProgressModal OK, showing modal... t=${(performance.now()-t0).toFixed(0)}ms`);
 
     window.ProgressModal.show('Collecting Favorites', 'Scanning page...');
 
     // 1. Collect IDs (DOM Only, no analysis)
-    console.log(`[GrokDebug:Content] Starting scanPage... t=${(performance.now()-t0).toFixed(0)}ms`);
     const foundItems = await window.MediaScanner.scanPage(type === 'scanOnly');
-    console.log(`[GrokDebug:Content] scanPage returned ${foundItems.length} items. t=${(performance.now()-t0).toFixed(0)}ms`);
 
     if (foundItems.length === 0) {
       throw new Error('No media found.');
     }
 
     // 2. Deep Analysis (Runs for BOTH ScanOnly and Download)
-    console.log(`[GrokDebug:Content] Starting prepareForDownload... t=${(performance.now()-t0).toFixed(0)}ms`);
     window.ProgressModal.update(50, `Found ${foundItems.length} items. Starting Deep Analysis (Tabs)...`);
     const analyzedMedia = await window.MediaScanner.prepareForDownload(foundItems, type);
-    console.log(`[GrokDebug:Content] prepareForDownload returned ${analyzedMedia.length} items. t=${(performance.now()-t0).toFixed(0)}ms`);
 
     // 3. Scan Only: Report and Exit -> REMOVED (Feature deprecated)
     /*

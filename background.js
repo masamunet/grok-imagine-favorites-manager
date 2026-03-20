@@ -108,7 +108,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 const reactPropsKey = Object.keys(domNode).find(key => key.startsWith('__reactFiber$'));
                 if (reactPropsKey) {
                   let fiberNode = domNode[reactPropsKey];
-                  for (let i = 0; i < 50; i++) {
+                  for (let i = 0; i < 15; i++) {
                     if (!fiberNode) break;
                     if (fiberNode.memoizedProps) {
                       const id = findUUID(fiberNode.memoizedProps);
@@ -198,27 +198,31 @@ async function analyzePostInTab(postId, postUrl) {
     }
 
     // --- STEP 2: SWITCH TAB IF AVAILABLE (Variations etc) ---
+    let tabSwitched = false;
     try {
-      await chrome.scripting.executeScript({
+      const switchResult = await chrome.scripting.executeScript({
         target: { tabId },
         func: switchTab
       });
-      await new Promise(r => setTimeout(r, 500));
+      tabSwitched = switchResult?.[0]?.result === true;
     } catch (e) {
       console.warn(`[Background] Failed to switch tab (Tab ${tabId}):`, e);
     }
 
-    // --- STEP 3: COLLECT ASSETS AGAIN (After possible tab switch) ---
-    try {
-      const secondaryResults = await chrome.scripting.executeScript({
-        target: { tabId },
-        func: scrapeAndIntercept
-      });
-      if (secondaryResults && secondaryResults[0] && secondaryResults[0].result) {
-        secondaryResults[0].result.forEach(u => collectedMedia.add(u));
+    // --- STEP 3: COLLECT ASSETS AGAIN (Only if tab was actually switched) ---
+    if (tabSwitched) {
+      await new Promise(r => setTimeout(r, 500));
+      try {
+        const secondaryResults = await chrome.scripting.executeScript({
+          target: { tabId },
+          func: scrapeAndIntercept
+        });
+        if (secondaryResults && secondaryResults[0] && secondaryResults[0].result) {
+          secondaryResults[0].result.forEach(u => collectedMedia.add(u));
+        }
+      } catch (e) {
+        console.warn(`[Background] Failed to scrape secondary view (Tab ${tabId}):`, e);
       }
-    } catch (e) {
-      console.warn(`[Background] Failed to scrape secondary view (Tab ${tabId}):`, e);
     }
 
     // Cleanup
@@ -293,6 +297,12 @@ function networkSniffer() {
     document.body.appendChild(relay);
   }
 
+  const collectedSet = new Set();
+  try {
+    const existing = JSON.parse(relay.dataset.collectedUrls || '[]');
+    existing.forEach(u => collectedSet.add(u));
+  } catch (e) { }
+
   const pushUrl = (url) => {
     if (!url) return;
     if (typeof url !== 'string') {
@@ -300,15 +310,10 @@ function networkSniffer() {
       else if (url instanceof Request) url = url.url;
     }
 
-    // Check for interesting extensions
     if (url.includes('.mp4') || url.includes('.jpg') || url.includes('.png') || url.includes('.webp')) {
-
-
-      let current = [];
-      try { current = JSON.parse(relay.dataset.collectedUrls || '[]'); } catch (e) { }
-      if (!current.includes(url)) {
-        current.push(url);
-        relay.dataset.collectedUrls = JSON.stringify(current);
+      if (!collectedSet.has(url)) {
+        collectedSet.add(url);
+        relay.dataset.collectedUrls = JSON.stringify([...collectedSet]);
         relay.setAttribute('data-timestamp', Date.now());
       }
     }
@@ -410,12 +415,10 @@ async function scrapeAndIntercept(mode) {
   let idleStartTime = null;
   let lastCount = 0;
 
-  // Max wait 4 seconds (safe wall-clock time)
-  while (Date.now() - startTime < 4000) {
-    // Wait 100ms (or 1000ms if throttled)
+  // Max wait 2.5 seconds (shortened from 4s for speed)
+  while (Date.now() - startTime < 2500) {
     await new Promise(r => setTimeout(r, 100));
 
-    // Check current results
     let currentCount = 0;
     try {
       const current = JSON.parse(relay.dataset.collectedUrls || '[]');
@@ -424,39 +427,27 @@ async function scrapeAndIntercept(mode) {
 
     const elapsed = Date.now() - startTime;
 
-    // Log occasionally (every ~500ms approx) - REMOVED
-
-
-    // If we have items...
     if (currentCount > 0) {
-      // First time detection
       if (!firstDiscoveryTime) {
         firstDiscoveryTime = Date.now();
       }
 
-      // And count hasn't changed since last tick
       if (currentCount === lastCount) {
         if (!idleStartTime) idleStartTime = Date.now();
-
-        const idleDuration = Date.now() - idleStartTime;
-        // If quiet for 600ms, exit
-        if (idleDuration >= 600) {
+        // Idle判定を400msに短縮 (600ms → 400ms)
+        if (Date.now() - idleStartTime >= 400) {
           break;
         }
       } else {
-        // Count changed, reset idle timer
         idleStartTime = null;
       }
     } else {
-      // 0 items
       idleStartTime = null;
-
-      // If button was found and 2s passed, timeout early
-      if (buttonFound && elapsed >= 2000) {
+      // ボタンあり: 1.5s、ボタンなし: 800ms でタイムアウト
+      if (buttonFound && elapsed >= 1500) {
         break;
       }
-      // If button NOT found, wait shorter (1.5s)
-      if (!buttonFound && elapsed >= 1500) {
+      if (!buttonFound && elapsed >= 800) {
         break;
       }
     }
@@ -485,9 +476,10 @@ function switchTab() {
 
     if (isImage) {
       el.click();
-      return;
+      return true;
     }
   }
+  return false;
 }
 
 /**
@@ -506,11 +498,10 @@ async function handleDownloads(media) {
   });
 
   const batchTimestamp = new Date();
-  media.forEach((item, index) => {
-    setTimeout(() => {
-      downloadFile(item, batchTimestamp);
-    }, index * DOWNLOAD_CONFIG.RATE_LIMIT_MS);
-  });
+  for (const item of media) {
+    downloadFile(item, batchTimestamp);
+    await new Promise(r => setTimeout(r, DOWNLOAD_CONFIG.RATE_LIMIT_MS));
+  }
 }
 
 function downloadFile(item, timestamp) {

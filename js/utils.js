@@ -7,7 +7,7 @@ var Utils = {
    * Logger utility to control debug output
    */
   Logger: {
-    DEBUG_MODE: true, // Set to true to enable detailed debug logs
+    DEBUG_MODE: false, // Set to true to enable detailed debug logs
     log(...args) {
       if (this.DEBUG_MODE) console.log(...args);
     },

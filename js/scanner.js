@@ -9,21 +9,14 @@ var MediaScanner = {
    * and inline scripts are blocked by CSP.
    */
   async injectFiberExtractor() {
-    console.log('[GrokDebug:Scanner] injectFiberExtractor: sending extractFiber message to background...');
     return new Promise((resolve) => {
       chrome.runtime.sendMessage({ action: 'extractFiber' }, (response) => {
         if (chrome.runtime.lastError) {
-          console.warn('[GrokDebug:Scanner] injectFiberExtractor: lastError:', chrome.runtime.lastError.message);
+          window.Utils.Logger.warn('[Scanner] Fiber extraction lastError:', chrome.runtime.lastError.message);
           resolve(false);
           return;
         }
-        console.log('[GrokDebug:Scanner] injectFiberExtractor: response:', JSON.stringify(response));
-        if (response && response.success) {
-          resolve(true);
-        } else {
-          console.warn('[GrokDebug:Scanner] injectFiberExtractor: failed:', response?.error);
-          resolve(false);
-        }
+        resolve(response && response.success);
       });
     });
   },
@@ -32,25 +25,18 @@ var MediaScanner = {
    * Phase 1: Expand Page and Scan (Visual Only)
    */
   async scanPage(visualizeOnly = false) {
-    const t0 = performance.now();
-    console.log(`[GrokDebug:Scanner] scanPage START visualizeOnly=${visualizeOnly} t=0ms`);
     if (window.ProgressModal) window.ProgressModal.update(10, 'Scanning items...');
 
-    // SPA transition support: The elements are heavily virtualized.
-    console.log(`[GrokDebug:Scanner] Sleeping 800ms for SPA transition... t=${(performance.now()-t0).toFixed(0)}ms`);
+    // SPA transition support
     await window.Utils.sleep(800);
-    console.log(`[GrokDebug:Scanner] Sleep done. t=${(performance.now()-t0).toFixed(0)}ms`);
 
-    // PRE-PROCESSING: Inject Fiber extraction script into MAIN world via background.js
-    console.log(`[GrokDebug:Scanner] Injecting Fiber Extractor... t=${(performance.now()-t0).toFixed(0)}ms`);
+    // PRE-PROCESSING: Inject Fiber extraction script into MAIN world
     try {
-      const fiberResult = await this.injectFiberExtractor();
-      console.log(`[GrokDebug:Scanner] Fiber Extractor result: ${fiberResult} t=${(performance.now()-t0).toFixed(0)}ms`);
+      await this.injectFiberExtractor();
     } catch (e) {
-      console.warn(`[GrokDebug:Scanner] Main world injection failed: ${e.message} t=${(performance.now()-t0).toFixed(0)}ms`);
+      window.Utils.Logger.warn(`[Scanner] Main world injection failed: ${e.message}`);
     }
 
-    console.log(`[GrokDebug:Scanner] Querying media elements... t=${(performance.now()-t0).toFixed(0)}ms`);
     const mediaElements = Array.from(document.querySelectorAll(
       'img[alt*="Generated" i], video, [data-testid="video-player"], [data-testid="video-component"], .video-js'
     )).filter(el => {
@@ -58,40 +44,20 @@ var MediaScanner = {
       return true;
     });
 
-    console.log(`[GrokDebug:Scanner] Found ${mediaElements.length} media elements in DOM. t=${(performance.now()-t0).toFixed(0)}ms`);
-    if (mediaElements.length > 0) {
-      mediaElements.forEach((el, i) => {
-        console.log(`[GrokDebug:Scanner]   [${i}] <${el.tagName}> src=${el.src?.substring(0, 80) || 'N/A'} alt=${el.alt?.substring(0, 40) || 'N/A'}`);
-      });
-    }
-
     if (mediaElements.length === 0) {
-      // 追加デバッグ: ページのDOM構造をダンプ
-      console.log(`[GrokDebug:Scanner] NO MEDIA FOUND. Dumping page structure...`);
-      console.log(`[GrokDebug:Scanner] document.title: ${document.title}`);
-      console.log(`[GrokDebug:Scanner] All img count: ${document.querySelectorAll('img').length}`);
-      console.log(`[GrokDebug:Scanner] All video count: ${document.querySelectorAll('video').length}`);
-      console.log(`[GrokDebug:Scanner] All a[href*="post"] count: ${document.querySelectorAll('a[href*="post"]').length}`);
-      console.log(`[GrokDebug:Scanner] body children count: ${document.body?.children.length}`);
-      const allImgs = document.querySelectorAll('img');
-      allImgs.forEach((img, i) => {
-        if (i < 10) console.log(`[GrokDebug:Scanner]   img[${i}] src=${img.src?.substring(0, 100)} alt=${img.alt?.substring(0, 50)}`);
-      });
+      window.Utils.Logger.warn(`[Scanner] No media found. img=${document.querySelectorAll('img').length}, video=${document.querySelectorAll('video').length}`);
       throw new Error(`アイテムが見つかりませんでした。「Download」を再試行するか、ページをリロードしてください。`);
     }
 
-    // 2. Scan the DOM
-    console.log(`[GrokDebug:Scanner] Starting collectVisibleItems... t=${(performance.now()-t0).toFixed(0)}ms`);
-    const foundItems = this.collectVisibleItems();
-    console.log(`[GrokDebug:Scanner] collectVisibleItems returned ${foundItems.length} items. t=${(performance.now()-t0).toFixed(0)}ms`);
+    window.Utils.Logger.log(`[Scanner] Found ${mediaElements.length} media elements in DOM.`);
+
+    const foundItems = this.collectVisibleItems(mediaElements);
 
     if (foundItems.length === 0) {
       throw new Error(`アイテムが見つかりませんでした。「Download」を再試行するか、ページをリロードしてください。`);
     }
 
-    window.Utils.Logger.log(`[Scanner] 📊 Total IDs Collected: ${foundItems.length} 件のアイテムを認識しました`);
-    window.Utils.Logger.log(`[Scanner] ⏳ Preparing deep analysis...`);
-
+    window.Utils.Logger.log(`[Scanner] Total IDs Collected: ${foundItems.length}`);
     return foundItems;
   },
 
@@ -178,20 +144,21 @@ var MediaScanner = {
   /**
    * Scans the current DOM for items
    */
-  collectVisibleItems() {
+  collectVisibleItems(mediaElements) {
     const processedPostIds = new Set();
     const foundItems = [];
 
-    // 1. Direct search for media elements (bottom-up approach to avoid class name issues in SPA)
-    const mediaElements = Array.from(document.querySelectorAll(
-      'img[alt*="Generated" i], video, [data-testid="video-player"], [data-testid="video-component"], .video-js'
-    )).filter(el => {
-      // Filter out clear noise
-      if (el.tagName === 'IMG' && el.src && el.src.includes('/profile/')) return false;
-      return true;
-    });
+    // Use passed-in elements, or query DOM as fallback
+    if (!mediaElements || mediaElements.length === 0) {
+      mediaElements = Array.from(document.querySelectorAll(
+        'img[alt*="Generated" i], video, [data-testid="video-player"], [data-testid="video-component"], .video-js'
+      )).filter(el => {
+        if (el.tagName === 'IMG' && el.src && el.src.includes('/profile/')) return false;
+        return true;
+      });
+    }
 
-    window.Utils.Logger.log(`[Scanner] DOM上で ${mediaElements.length} 件のメディア要素候補を取得しました。抽出を開始します...`);
+    window.Utils.Logger.log(`[Scanner] DOM上で ${mediaElements.length} 件のメディア要素候補を取得しました。`);
 
     for (let idx = 0; idx < mediaElements.length; idx++) {
       const el = mediaElements[idx];
@@ -238,48 +205,43 @@ var MediaScanner = {
 
   async prepareForDownload(items, filterType) {
     const allMediaData = new Map(); // URL -> {url, filename}
+    const CONCURRENCY = 3; // 同時分析数（サーバー負荷を配慮）
 
-    // CRITICAL CHANGE: User confirmed DOM detection is unreliable.
-    // We must analyze ALL items via API to ensure we don't miss videos.
-    // Previous "Static Image" optimization is removed.
+    window.Utils.Logger.log(`[Scanner] 🕵️ Starting Strict Analysis for ${items.length} items (concurrency=${CONCURRENCY})...`);
 
-    window.Utils.Logger.log(`[Scanner] 🕵️ Starting Strict Analysis for ${items.length} items...`);
-
-    for (let i = 0; i < items.length; i++) {
+    for (let i = 0; i < items.length; i += CONCURRENCY) {
       if (window.ProgressModal.isCancelled()) break;
-      const item = items[i];
 
-      window.ProgressModal.update(50 + ((i / items.length) * 40), `Opening Tab & Analyzing Item ${i + 1}/${items.length}...`);
+      const batch = items.slice(i, Math.min(i + CONCURRENCY, items.length));
+      window.ProgressModal.update(50 + ((i / items.length) * 40), `Analyzing ${i + 1}-${Math.min(i + CONCURRENCY, items.length)}/${items.length}...`);
 
-      try {
-        // ALWAYS use API/Background Tab Analysis
-        // This triggers background.js to open a tab, inject sniffer, and capture media
-        const results = await window.Api.requestAnalysis(item.id, item.url);
+      const promises = batch.map(item =>
+        window.Api.requestAnalysis(item.id, item.url).catch(e => {
+          console.error(`[Scanner] ❌ Analysis failed for ${item.id}:`, e);
+          return [];
+        })
+      );
 
+      const batchResults = await Promise.all(promises);
+
+      for (const results of batchResults) {
         if (Array.isArray(results) && results.length > 0) {
           results.forEach(res => {
             if (res.url) {
               const ext = res.type === 'video' ? 'mp4' : 'jpg';
-              // Keep original ID for filename if possible, usage depends on API response structure
-              // The API usually returns the variant ID. We might want to use the Post ID.
               const filename = `${res.id}.${ext}`;
-
               if (!allMediaData.has(res.url)) {
                 allMediaData.set(res.url, { url: res.url, filename, type: res.type });
               }
             }
           });
-        } else {
-          // Fallback: If API returns nothing, AND it was physically an image, maybe we can save it?
-          // But user wants strictness. If API fails, maybe we shouldn't guess.
-          // Let's assume API is the source of truth.
-          console.warn(`[Scanner] No media found via API for ${item.id}`);
         }
-
-      } catch (e) {
-        console.error(`[Scanner] ❌ Analysis failed for ${item.id}:`, e);
       }
-      await window.Utils.sleep(window.CONFIG.ANALYSIS_DELAY_MS);
+
+      // バッチ間のディレイ（サーバー負荷軽減）
+      if (i + CONCURRENCY < items.length) {
+        await window.Utils.sleep(window.CONFIG.ANALYSIS_DELAY_MS);
+      }
     }
 
     // Filter results based on requested type
