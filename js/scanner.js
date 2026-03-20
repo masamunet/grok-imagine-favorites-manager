@@ -280,6 +280,13 @@ var MediaScanner = {
   async unsaveAllLegacy() {
     console.log('[Scanner] Starting unsave sweep...');
 
+    // Inject Fiber extractor to get correct post IDs (especially for video cards)
+    try {
+      await this.injectFiberExtractor();
+    } catch (e) {
+      console.warn('[Scanner] Fiber injection failed for unsave, falling back to DOM extraction');
+    }
+
     let scrollContainer = document.documentElement;
     const possibleContainers = [document.querySelector('main'), document.querySelector('.overflow-y-auto')]
       .filter(el => el !== null);
@@ -308,7 +315,7 @@ var MediaScanner = {
             clicked = true;
             actedOnThisTurn++;
             totalProcessed++;
-            await window.Utils.sleep(300); // Wait for UI update
+            await window.Utils.sleep(300);
           } catch (e) { }
         }
 
@@ -316,8 +323,6 @@ var MediaScanner = {
         const postData = window.Utils.extractPostDataFromElement(card);
         if (postData && postData.id && !processedIds.has(postData.id)) {
           processedIds.add(postData.id);
-          // If button click didn't happen (or failed), try API logic
-          // But note: if button clicked, we still add ID to processed to avoid double counting
           if (!clicked) {
             await window.Api.unlikePost(postData.id);
             actedOnThisTurn++;

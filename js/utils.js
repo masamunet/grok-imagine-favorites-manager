@@ -82,8 +82,12 @@ var Utils = {
       // NOTE: Chrome Extension Isolated World prevents content scripts from reading React propertes.
       // So scanner.js injects a script into the MAIN world, which sets the ID to a data attribute.
       try {
-        if (element.hasAttribute && element.hasAttribute('data-grok-extracted-id')) {
-          const id = element.getAttribute('data-grok-extracted-id');
+        // Check element itself and its children for Fiber-extracted ID
+        const fiberEl = (element.hasAttribute && element.hasAttribute('data-grok-extracted-id'))
+          ? element
+          : element.querySelector ? element.querySelector('[data-grok-extracted-id]') : null;
+        if (fiberEl) {
+          const id = fiberEl.getAttribute('data-grok-extracted-id');
           if (id && id.length >= 36) {
             return {
               id: id.toLowerCase(),
