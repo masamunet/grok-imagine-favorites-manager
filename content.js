@@ -7,7 +7,6 @@
 // Initialize simple modules map for debugging if needed
 window.GrokModules = {
   Scanner: window.MediaScanner,
-  Classifier: window.ItemClassifier,
   Api: window.Api,
   UI: window.ProgressModal,
   Utils: window.Utils
@@ -43,7 +42,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     try {
       chrome.storage.local.set({ activeOperation: true });
 
-      if (action.startsWith('save') || action === 'scanOnly') {
+      if (action.startsWith('save')) {
         await handleSaveFlow(action);
       } else if (action === 'unsaveAll') {
         await handleUnsaveFlow();
@@ -86,32 +85,12 @@ async function handleSaveFlow(type) {
     window.ProgressModal.update(50, `Found ${foundItems.length} items. Starting Deep Analysis (Tabs)...`);
     const analyzedMedia = await window.MediaScanner.prepareForDownload(foundItems, type);
 
-    // 3. Scan Only: Report and Exit -> REMOVED (Feature deprecated)
-    /*
-    if (type === 'scanOnly') {
-      const videoCount = analyzedMedia.filter(i => i.filename.endsWith('.mp4')).length;
-      const imageCount = analyzedMedia.length - videoCount;
-
-      window.ProgressModal.update(100, `Scan Complete! Found ${analyzedMedia.length} verified items.`);
-      await window.Utils.sleep(500);
-
-      alert(`Deep Scan Complete (Verified via Tabs):\n` +
-        `Total Verified: ${analyzedMedia.length}\n` +
-        `Videos: ${videoCount}\n` +
-        `Images: ${imageCount}`);
-      return;
-    }
-    */
-
     if (analyzedMedia.length === 0) {
       throw new Error('No downloadable media could be resolved from analysis.');
     }
 
     // 4. Download
     window.ProgressModal.update(100, `Ready to download ${analyzedMedia.length} files. Starting...`);
-
-    console.log(`[GrokManager] Starting batch download for ${analyzedMedia.length} files.`);
-    console.table(analyzedMedia);
 
     // Send work to background script
     window.Api.startDownloads(analyzedMedia);

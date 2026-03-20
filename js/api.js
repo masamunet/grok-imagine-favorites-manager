@@ -3,12 +3,7 @@
  */
 
 var Api = {
-  /**
-   * Request deep analysis for a post from the background script
-   * Returns a Promise that resolves to an array of media objects [{url, id, type}]
-   */
   endpoints: {
-    analysis: 'https://grok.com/rest/app-chat/conversations',
     unlike: 'https://grok.com/rest/media/post/unlike'
   },
 

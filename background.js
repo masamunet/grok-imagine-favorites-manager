@@ -5,14 +5,14 @@
 
 // Global error handler to catch "Uncaught (in promise)" errors - MUST BE FIRST
 self.addEventListener('unhandledrejection', event => {
-  // Suppress specific startup errors from cluttering the console/UI
+  // Suppress only specific startup errors
   if (event.reason && event.reason.message &&
     (event.reason.message.includes('Tabs cannot be edited') || event.reason.message.includes('Extension warming up'))) {
     event.preventDefault();
     return;
   }
-  console.warn('[Background] Unhandled rejection catch:', event.reason);
-  event.preventDefault();
+  // Let other unhandled rejections propagate normally for debugging
+  console.warn('[Background] Unhandled rejection:', event.reason);
 });
 
 // Constants
@@ -27,6 +27,14 @@ const STARTUP_DELAY = 3000; // 3 seconds grace period
 // Semaphore for concurrent tab analysis (prevents tab explosion)
 const MAX_CONCURRENT_TABS = 3;
 let activeTabCount = 0;
+
+// Resume download queue on SW restart
+chrome.storage.local.get(['downloadQueue'], (result) => {
+  if (result.downloadQueue && result.downloadQueue.length > 0) {
+    console.log(`[Background] Resuming ${result.downloadQueue.length} queued downloads after SW restart`);
+    processNextDownload();
+  }
+});
 
 /**
  * Handles messages from content script
@@ -59,7 +67,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'extractFiber') {
-    console.log('[GrokDebug:Background] extractFiber received for tab:', sender.tab?.id, 'url:', sender.tab?.url);
     try {
       chrome.scripting.executeScript({
         target: { tabId: sender.tab.id },
@@ -122,10 +129,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         },
         world: 'MAIN'
       }).then(() => {
-        console.log('[GrokDebug:Background] extractFiber: script executed successfully');
         sendResponse({ success: true });
       }).catch(err => {
-        console.error('[GrokDebug:Background] extractFiber: script execution failed:', err.message);
         sendResponse({ success: false, error: err.message });
       });
     } catch (error) {
@@ -192,6 +197,20 @@ async function analyzePostInTab(postId, postUrl) {
       return [];
     }
 
+    // --- STEP 0.5: COLLECT IMAGE URLs DIRECTLY FROM DOM ---
+    // Video posts only trigger .mp4 via fetch/XHR; static images are already in <img> tags
+    try {
+      const domResults = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: collectDomMediaUrls
+      });
+      if (domResults && domResults[0] && domResults[0].result) {
+        domResults[0].result.forEach(u => collectedMedia.add(u));
+      }
+    } catch (e) {
+      console.warn(`[Background] Failed to collect DOM images (Tab ${tabId}):`, e);
+    }
+
     // --- STEP 1: COLLECT VISIBLE ASSETS (Initial View) ---
     try {
       const initialResults = await chrome.scripting.executeScript({
@@ -245,7 +264,6 @@ async function analyzePostInTab(postId, postUrl) {
       .filter(url => url && url.length > 5)
       .map(url => {
         const id = extractPostIdFromUrl(url) || postId;
-        // Strict video detection: only match .mp4 extension, not 'video' in path
         const isVideo = /\.mp4(\?|$)/i.test(url);
         const type = isVideo ? 'video' : 'image';
         return { url, id, type };
@@ -403,12 +421,12 @@ async function scrapeAndIntercept(mode) {
   if (dlBtns.length > 0) {
     dlBtns.forEach(dlBtn => {
       if ((dlBtn.tagName === 'A' || dlBtn.hasAttribute('href')) && dlBtn.href) {
-        let current = [];
-        try { current = JSON.parse(relay.dataset.collectedUrls || '[]'); } catch (e) { }
-        if (!current.includes(dlBtn.href)) {
-          current.push(dlBtn.href);
-          relay.dataset.collectedUrls = JSON.stringify(current);
-          relay.setAttribute('data-timestamp', Date.now());
+        // Write to separate attribute to avoid race with MAIN world sniffer
+        let isolated = [];
+        try { isolated = JSON.parse(relay.dataset.isolatedUrls || '[]'); } catch (e) { }
+        if (!isolated.includes(dlBtn.href)) {
+          isolated.push(dlBtn.href);
+          relay.dataset.isolatedUrls = JSON.stringify(isolated);
         }
       }
       try {
@@ -466,14 +484,46 @@ async function scrapeAndIntercept(mode) {
     lastCount = currentCount;
   }
 
-  let results = [];
+  // Merge URLs from both MAIN world (collectedUrls) and ISOLATED world (isolatedUrls)
+  const resultSet = new Set();
   try {
-    const all = JSON.parse(relay.dataset.collectedUrls || '[]');
-    // Return only URLs discovered after baseline (new since this scrape started)
-    results = all.slice(baselineCount);
+    const mainUrls = JSON.parse(relay.dataset.collectedUrls || '[]');
+    mainUrls.slice(baselineCount).forEach(u => resultSet.add(u));
   } catch (e) { }
+  try {
+    const isolatedUrls = JSON.parse(relay.dataset.isolatedUrls || '[]');
+    isolatedUrls.forEach(u => resultSet.add(u));
+  } catch (e) { }
+  relay.dataset.isolatedUrls = '[]';
 
-  return results;
+  return Array.from(resultSet);
+}
+
+/**
+ * Collects media URLs directly from DOM (img src, video src/poster)
+ * Runs in ISOLATED world - captures images that sniffer cannot catch via fetch/XHR
+ */
+/**
+ * Collects media URLs directly from DOM (img src, video src/poster)
+ * Runs in ISOLATED world - captures images that sniffer cannot catch via fetch/XHR
+ */
+function collectDomMediaUrls() {
+  const urls = new Set();
+  document.querySelectorAll('img').forEach(img => {
+    if (!img.src) return;
+    if (!(img.src.includes('.jpg') || img.src.includes('.png') || img.src.includes('.webp'))) return;
+    // Skip profile pictures, avatars, icons
+    if (img.src.includes('profile-picture') || img.src.includes('/profile/') || img.src.includes('/avatar/')) return;
+    if (img.naturalWidth > 0 && img.naturalWidth < 100) return;
+    // Normalize: strip query string to avoid duplicates (e.g. ?cache=1 vs ?cache=1&d=...)
+    try {
+      const u = new URL(img.src);
+      urls.add(u.origin + u.pathname);
+    } catch (e) {
+      urls.add(img.src);
+    }
+  });
+  return Array.from(urls);
 }
 
 function switchTab() {
@@ -497,44 +547,21 @@ function switchTab() {
 }
 
 /**
- * Download queue - event-driven to avoid blocking service worker
+ * Download queue - persisted to chrome.storage.local for SW restart resilience
  */
-let downloadQueue = [];
-let downloadTimestamp = null;
-let isDownloading = false;
-
 async function handleDownloads(media) {
   if (!Array.isArray(media) || media.length === 0) throw new Error('No media provided');
+
+  // Re-entry guard: reject if already downloading
+  const existing = await chrome.storage.local.get(['downloadQueue']);
+  if (existing.downloadQueue && existing.downloadQueue.length > 0) {
+    throw new Error('Download already in progress');
+  }
 
   const videoCount = media.filter(item => item.filename && item.filename.toLowerCase().endsWith('.mp4')).length;
   const imageCount = media.length - videoCount;
 
-  await chrome.storage.local.set({
-    totalDownloads: media.length,
-    downloadProgress: {},
-    downloadCounts: { video: videoCount, image: imageCount }
-  });
-
-  downloadQueue = [...media];
-  downloadTimestamp = new Date();
-  isDownloading = true;
-  processNextDownload();
-}
-
-function processNextDownload() {
-  if (downloadQueue.length === 0) {
-    isDownloading = false;
-    return;
-  }
-
-  const item = downloadQueue.shift();
-  if (!item.url || !item.filename) {
-    // Skip invalid items, proceed to next immediately
-    processNextDownload();
-    return;
-  }
-
-  const now = downloadTimestamp || new Date();
+  const now = new Date();
   const yyyy = now.getFullYear();
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const dd = String(now.getDate()).padStart(2, '0');
@@ -542,14 +569,40 @@ function processNextDownload() {
   const min = String(now.getMinutes()).padStart(2, '0');
   const datePath = `${yyyy}_${mm}_${dd}/${hh}_${min}`;
 
-  chrome.downloads.download({
-    url: item.url,
-    filename: `${DOWNLOAD_CONFIG.FOLDER}/${datePath}/${item.filename}`,
-    saveAs: false
+  await chrome.storage.local.set({
+    totalDownloads: media.length,
+    downloadProgress: {},
+    downloadCounts: { video: videoCount, image: imageCount },
+    downloadQueue: media,
+    downloadDatePath: datePath
   });
 
+  processNextDownload();
+}
+
+async function processNextDownload() {
+  const data = await chrome.storage.local.get(['downloadQueue', 'downloadDatePath']);
+  const queue = data.downloadQueue || [];
+
+  if (queue.length === 0) return;
+
+  // Pop first item
+  const item = queue.shift();
+  await chrome.storage.local.set({ downloadQueue: queue });
+
+  if (item.url && item.filename) {
+    const datePath = data.downloadDatePath || 'unknown';
+    chrome.downloads.download({
+      url: item.url,
+      filename: `${DOWNLOAD_CONFIG.FOLDER}/${datePath}/${item.filename}`,
+      saveAs: false
+    });
+  }
+
   // Schedule next download after rate limit (non-blocking)
-  setTimeout(processNextDownload, DOWNLOAD_CONFIG.RATE_LIMIT_MS);
+  if (queue.length > 0) {
+    setTimeout(processNextDownload, DOWNLOAD_CONFIG.RATE_LIMIT_MS);
+  }
 }
 
 chrome.downloads.onChanged.addListener((delta) => {

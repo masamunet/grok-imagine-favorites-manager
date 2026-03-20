@@ -25,7 +25,6 @@
         "js/constants.js",
         "js/utils.js",
         "js/ui.js",
-        "js/classifier.js",
         "js/api.js",
         "js/scanner.js",
         "content.js"

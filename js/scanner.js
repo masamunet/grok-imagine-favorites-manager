@@ -204,7 +204,7 @@ var MediaScanner = {
   },
 
   async prepareForDownload(items, filterType) {
-    const allMediaData = new Map(); // URL -> {url, filename}
+    const allMediaData = new Map(); // dedupKey (id+ext) -> {url, filename, type}
     const CONCURRENCY = 3; // 同時分析数（サーバー負荷を配慮）
 
     window.Utils.Logger.log(`[Scanner] 🕵️ Starting Strict Analysis for ${items.length} items (concurrency=${CONCURRENCY})...`);
@@ -230,8 +230,9 @@ var MediaScanner = {
             if (res.url) {
               const ext = res.type === 'video' ? 'mp4' : 'jpg';
               const filename = `${res.id}.${ext}`;
-              if (!allMediaData.has(res.url)) {
-                allMediaData.set(res.url, { url: res.url, filename, type: res.type });
+              const dedupKey = `${res.id}.${ext}`;
+              if (!allMediaData.has(dedupKey)) {
+                allMediaData.set(dedupKey, { url: res.url, filename, type: res.type });
               }
             }
           });
@@ -244,37 +245,33 @@ var MediaScanner = {
       }
     }
 
+    // Remove image thumbnails that have a matching video (same ID)
+    const videoIds = new Set();
+    for (const [key, item] of allMediaData) {
+      if (item.type === 'video') videoIds.add(item.filename.replace('.mp4', ''));
+    }
+    for (const [key, item] of allMediaData) {
+      if (item.type === 'image' && videoIds.has(item.filename.replace('.jpg', ''))) {
+        allMediaData.delete(key);
+      }
+    }
+
     // Filter results based on requested type
     let finalResults = Array.from(allMediaData.values());
 
     const rawVideoCount = finalResults.filter(item => item.filename.endsWith('.mp4')).length;
     const rawImageCount = finalResults.length - rawVideoCount;
-    window.Utils.Logger.log(`[Scanner] 🔎 [フィルタ前] 全アイテムから抽出されたメディア総数: ${finalResults.length} (動画: ${rawVideoCount}, 静止画: ${rawImageCount})`);
-
     if (filterType === 'saveImages') {
       finalResults = finalResults.filter(item => !item.filename.toLowerCase().endsWith('.mp4'));
     } else if (filterType === 'saveVideos') {
       finalResults = finalResults.filter(item => item.filename.toLowerCase().endsWith('.mp4'));
     }
 
-    const videoCount = finalResults.filter(item => item.filename.endsWith('.mp4')).length;
-    const imageCount = finalResults.length - videoCount;
-
-    // DETAILED LOGGING as requested by User
-    window.Utils.Logger.log(`[Scanner] 📦 [フィルタ後] ダウンロード対象(${filterType}) メディア数: ${finalResults.length}`);
-    window.Utils.Logger.log(`[Scanner] 📹 DL予定 動画: ${videoCount}`);
-    window.Utils.Logger.log(`[Scanner] 🖼️ DL予定 静止画: ${imageCount}`);
-
     return finalResults;
   },
 
-  async scan(type) {
-    console.warn('MediaScanner.scan is deprecated.');
-    return [];
-  },
-
   async unsaveAll() {
-    return this.unsaveAllLegacy(); // Keeping legacy name internal if needed
+    return this.unsaveAllLegacy();
   },
 
   /**
