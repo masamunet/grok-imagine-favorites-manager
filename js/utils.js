@@ -117,9 +117,8 @@ var Utils = {
           const match = el.href.match(/\/(?:post|status|imagine\/post)\/([0-9a-f-]{36}|[0-9a-f]{8,})/i);
           if (match) {
             const uuid = match[1].toLowerCase();
-            const urlObj = new URL(el.href);
             return {
-              id: uuid + urlObj.search,
+              id: uuid,
               url: el.href,
               strategy: 'Ancestor A-Tag',
               isFallback: false
@@ -135,9 +134,8 @@ var Utils = {
         const match = link.href.match(/\/(?:post|status|imagine\/post)\/([0-9a-f-]{36}|[0-9a-f]{8,})/i);
         if (match) {
           const uuid = match[1].toLowerCase();
-          const urlObj = new URL(link.href);
           return {
-            id: uuid + urlObj.search,
+            id: uuid,
             url: link.href,
             strategy: 'Inner A-Tag',
             isFallback: false

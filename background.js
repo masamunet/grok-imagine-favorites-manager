@@ -24,8 +24,9 @@ const DOWNLOAD_CONFIG = {
 const START_TIME = Date.now();
 const STARTUP_DELAY = 3000; // 3 seconds grace period
 
-// Global map to track analysis requests
-const activeAnalysis = new Map();
+// Semaphore for concurrent tab analysis (prevents tab explosion)
+const MAX_CONCURRENT_TABS = 3;
+let activeTabCount = 0;
 
 /**
  * Handles messages from content script
@@ -33,35 +34,27 @@ const activeAnalysis = new Map();
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'startDownloads') {
     handleDownloads(request.media)
-      .then(() => sendResponse({ success: true }))
-      .catch(error => {
-        sendResponse({ success: false, error: error.message });
-      });
+      .then(() => { try { sendResponse({ success: true }); } catch (e) { } })
+      .catch(error => { try { sendResponse({ success: false, error: error.message }); } catch (e) { } });
     return true;
   }
 
   // proxyLogInternal listener removed
 
   if (request.action === 'analyzePost') {
-    console.log(`[GrokDebug:Background] analyzePost received: postId=${request.postId} url=${request.url}`);
     // IGNORE requests during startup grace period to prevent "Tabs cannot be edited" storm
     if (Date.now() - START_TIME < STARTUP_DELAY) {
-      console.warn('[GrokDebug:Background] Ignoring analysis request during startup grace period.');
       sendResponse({ success: false, error: 'Extension warming up' });
       return true;
     }
 
-    // Add jitter to prevent thundering herd
-    const delay = Math.floor(Math.random() * 2000); // 0-2s delay
-    console.log(`[GrokDebug:Background] analyzePost: applying ${delay}ms jitter`);
-    setTimeout(() => {
-      analyzePostInTab(request.postId, request.url)
-        .then(result => sendResponse({ success: true, data: result }))
-        .catch(error => {
-          console.error('Analysis error:', error);
-          sendResponse({ success: false, error: error.message });
-        });
-    }, delay);
+    analyzePostInTab(request.postId, request.url)
+      .then(result => {
+        try { sendResponse({ success: true, data: result }); } catch (e) { }
+      })
+      .catch(error => {
+        try { sendResponse({ success: false, error: error.message }); } catch (e) { }
+      });
     return true;
   }
 
@@ -148,8 +141,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
  * Opens a background tab, injects network sniffer, interacts, captures URLs
  */
 async function analyzePostInTab(postId, postUrl) {
+  // Semaphore: wait until a slot is available
+  while (activeTabCount >= MAX_CONCURRENT_TABS) {
+    await new Promise(r => setTimeout(r, 300));
+  }
+  activeTabCount++;
+
+  // Jitter to prevent thundering herd (0-1s, reduced since semaphore handles concurrency)
+  await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1000)));
+
   let tabId = null;
-  const collectedMedia = new Set(); // Use Set for uniqueness
+  const collectedMedia = new Set();
 
   try {
     const targetUrl = postUrl || `https://grok.com/imagine/post/${postId}`;
@@ -157,16 +159,22 @@ async function analyzePostInTab(postId, postUrl) {
     const tab = await createTabSafe(targetUrl);
     tabId = tab.id;
 
-    // Wait for load
+    // Wait for load with settled flag to prevent double-resolve side effects
     await new Promise(resolve => {
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      };
       const listener = (tid, changeInfo) => {
         if (tid === tabId && changeInfo.status === 'complete') {
-          chrome.tabs.onUpdated.removeListener(listener);
-          setTimeout(resolve, 500);
+          setTimeout(done, 500);
         }
       };
       chrome.tabs.onUpdated.addListener(listener);
-      setTimeout(() => { chrome.tabs.onUpdated.removeListener(listener); resolve(); }, 8000);
+      setTimeout(done, 8000);
     });
 
     // --- INJECT SNIFFER (MAIN WORLD) ---
@@ -237,7 +245,8 @@ async function analyzePostInTab(postId, postUrl) {
       .filter(url => url && url.length > 5)
       .map(url => {
         const id = extractPostIdFromUrl(url) || postId;
-        const isVideo = url.includes('.mp4') || url.includes('video');
+        // Strict video detection: only match .mp4 extension, not 'video' in path
+        const isVideo = /\.mp4(\?|$)/i.test(url);
         const type = isVideo ? 'video' : 'image';
         return { url, id, type };
       });
@@ -247,7 +256,9 @@ async function analyzePostInTab(postId, postUrl) {
       try { await chrome.tabs.remove(tabId); } catch (err) { }
     }
     console.error(`[Background] Analysis critical failure for ${postId}:`, e);
-    return []; // Return empty instead of throwing to keep service worker alive
+    return [];
+  } finally {
+    activeTabCount--;
   }
 }
 
@@ -359,9 +370,10 @@ async function scrapeAndIntercept(mode) {
     return [];
   }
 
-
-  // Reset collected urls
-  relay.dataset.collectedUrls = '[]';
+  // Record baseline count instead of resetting (prevents race with MAIN world sniffer)
+  let baselineUrls = [];
+  try { baselineUrls = JSON.parse(relay.dataset.collectedUrls || '[]'); } catch (e) { }
+  const baselineCount = baselineUrls.length;
 
   const findAllBtns = () => {
     const btns = Array.from(document.querySelectorAll('button, a, [role="button"]'));
@@ -415,14 +427,15 @@ async function scrapeAndIntercept(mode) {
   let idleStartTime = null;
   let lastCount = 0;
 
-  // Max wait 2.5 seconds (shortened from 4s for speed)
-  while (Date.now() - startTime < 2500) {
+  // Max wait 4s - background tabs throttle setTimeout to 1000ms minimum,
+  // so we need enough wall-clock time for at least 3-4 polling cycles
+  while (Date.now() - startTime < 4000) {
     await new Promise(r => setTimeout(r, 100));
 
     let currentCount = 0;
     try {
       const current = JSON.parse(relay.dataset.collectedUrls || '[]');
-      currentCount = current.length;
+      currentCount = current.length - baselineCount;
     } catch (e) { }
 
     const elapsed = Date.now() - startTime;
@@ -434,8 +447,8 @@ async function scrapeAndIntercept(mode) {
 
       if (currentCount === lastCount) {
         if (!idleStartTime) idleStartTime = Date.now();
-        // Idle判定を400msに短縮 (600ms → 400ms)
-        if (Date.now() - idleStartTime >= 400) {
+        // 1500ms idle - accounts for background tab throttling (1000ms min setTimeout)
+        if (Date.now() - idleStartTime >= 1500) {
           break;
         }
       } else {
@@ -443,11 +456,10 @@ async function scrapeAndIntercept(mode) {
       }
     } else {
       idleStartTime = null;
-      // ボタンあり: 1.5s、ボタンなし: 800ms でタイムアウト
-      if (buttonFound && elapsed >= 1500) {
+      if (buttonFound && elapsed >= 2000) {
         break;
       }
-      if (!buttonFound && elapsed >= 800) {
+      if (!buttonFound && elapsed >= 1500) {
         break;
       }
     }
@@ -456,7 +468,9 @@ async function scrapeAndIntercept(mode) {
 
   let results = [];
   try {
-    results = JSON.parse(relay.dataset.collectedUrls || '[]');
+    const all = JSON.parse(relay.dataset.collectedUrls || '[]');
+    // Return only URLs discovered after baseline (new since this scrape started)
+    results = all.slice(baselineCount);
   } catch (e) { }
 
   return results;
@@ -483,8 +497,12 @@ function switchTab() {
 }
 
 /**
- * Standard Download Logic
+ * Download queue - event-driven to avoid blocking service worker
  */
+let downloadQueue = [];
+let downloadTimestamp = null;
+let isDownloading = false;
+
 async function handleDownloads(media) {
   if (!Array.isArray(media) || media.length === 0) throw new Error('No media provided');
 
@@ -497,27 +515,41 @@ async function handleDownloads(media) {
     downloadCounts: { video: videoCount, image: imageCount }
   });
 
-  const batchTimestamp = new Date();
-  for (const item of media) {
-    downloadFile(item, batchTimestamp);
-    await new Promise(r => setTimeout(r, DOWNLOAD_CONFIG.RATE_LIMIT_MS));
-  }
+  downloadQueue = [...media];
+  downloadTimestamp = new Date();
+  isDownloading = true;
+  processNextDownload();
 }
 
-function downloadFile(item, timestamp) {
-  if (!item.url || !item.filename) return;
-  const now = timestamp || new Date();
+function processNextDownload() {
+  if (downloadQueue.length === 0) {
+    isDownloading = false;
+    return;
+  }
+
+  const item = downloadQueue.shift();
+  if (!item.url || !item.filename) {
+    // Skip invalid items, proceed to next immediately
+    processNextDownload();
+    return;
+  }
+
+  const now = downloadTimestamp || new Date();
   const yyyy = now.getFullYear();
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const dd = String(now.getDate()).padStart(2, '0');
   const hh = String(now.getHours()).padStart(2, '0');
   const min = String(now.getMinutes()).padStart(2, '0');
   const datePath = `${yyyy}_${mm}_${dd}/${hh}_${min}`;
+
   chrome.downloads.download({
     url: item.url,
     filename: `${DOWNLOAD_CONFIG.FOLDER}/${datePath}/${item.filename}`,
     saveAs: false
   });
+
+  // Schedule next download after rate limit (non-blocking)
+  setTimeout(processNextDownload, DOWNLOAD_CONFIG.RATE_LIMIT_MS);
 }
 
 chrome.downloads.onChanged.addListener((delta) => {
