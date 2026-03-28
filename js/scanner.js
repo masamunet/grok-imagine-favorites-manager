@@ -51,7 +51,7 @@ var MediaScanner = {
 
     window.Utils.Logger.log(`[Scanner] Found ${mediaElements.length} media elements in DOM.`);
 
-    const foundItems = this.collectVisibleItems(mediaElements);
+    const foundItems = await this.collectVisibleItems(mediaElements);
 
     if (foundItems.length === 0) {
       throw new Error(`アイテムが見つかりませんでした。「Download」を再試行するか、ページをリロードしてください。`);
@@ -144,7 +144,7 @@ var MediaScanner = {
   /**
    * Scans the current DOM for items
    */
-  collectVisibleItems(mediaElements) {
+  async collectVisibleItems(mediaElements) {
     const processedPostIds = new Set();
     const foundItems = [];
 
@@ -161,6 +161,11 @@ var MediaScanner = {
     window.Utils.Logger.log(`[Scanner] DOM上で ${mediaElements.length} 件のメディア要素候補を取得しました。`);
 
     for (let idx = 0; idx < mediaElements.length; idx++) {
+      // 20件ごとにメインスレッドを解放してブラウザフリーズを防ぐ
+      if (idx > 0 && idx % 20 === 0) {
+        await new Promise(r => setTimeout(r, 0));
+      }
+
       const el = mediaElements[idx];
       const postData = window.Utils.extractPostDataFromElement(el);
 

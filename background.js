@@ -71,7 +71,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     try {
       chrome.scripting.executeScript({
         target: { tabId: sender.tab.id },
-        func: () => {
+        func: async () => {
           function findUUID(obj, depth = 0) {
             if (depth > 5 || !obj) return null;
             if (typeof obj === 'string') {
@@ -99,8 +99,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             return null;
           }
 
-          const elements = document.querySelectorAll('img, video, [data-testid="video-player"], [data-testid="video-component"]');
-          for (let el of elements) {
+          const elements = Array.from(document.querySelectorAll('img, video, [data-testid="video-player"], [data-testid="video-component"]'));
+          for (let i = 0; i < elements.length; i++) {
+            // 20件ごとにメインスレッドを解放してブラウザフリーズを防ぐ
+            if (i > 0 && i % 20 === 0) {
+              await new Promise(r => setTimeout(r, 0));
+            }
+            const el = elements[i];
             try {
               let domNode = el;
               let found = false;
@@ -109,7 +114,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 const reactPropsKey = Object.keys(domNode).find(key => key.startsWith('__reactFiber$'));
                 if (reactPropsKey) {
                   let fiberNode = domNode[reactPropsKey];
-                  for (let i = 0; i < 15; i++) {
+                  for (let j = 0; j < 15; j++) {
                     if (!fiberNode) break;
                     if (fiberNode.memoizedProps) {
                       const id = findUUID(fiberNode.memoizedProps);
