@@ -153,8 +153,7 @@ async function analyzePostInTab(postId, postUrl) {
   }
   activeTabCount++;
 
-  // Jitter to prevent thundering herd (0-1s, reduced since semaphore handles concurrency)
-  await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1000)));
+  // Semaphore already prevents thundering herd; jitter removed to reduce latency
 
   let tabId = null;
   const collectedMedia = new Set();

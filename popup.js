@@ -30,12 +30,9 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('downloadSettings').addEventListener('click', openDownloadSettings);
   document.getElementById('cancelOperation').addEventListener('click', cancelCurrentOperation);
 
-  // Start progress tracking
+  // Start unified progress tracking (single polling loop instead of two)
   setInterval(updateProgress, UPDATE_INTERVAL);
   updateProgress();
-
-  // Check for active operations
-  checkActiveOperation();
 });
 
 /**
@@ -173,36 +170,16 @@ function cancelCurrentOperation() {
 }
 
 /**
- * Checks if there's an active operation and shows/hides cancel button
- */
-function checkActiveOperation() {
-  chrome.storage.local.get(['activeOperation'], (result) => {
-    const cancelBtn = document.getElementById('cancelOperation');
-    if (result.activeOperation) {
-      cancelBtn.style.display = 'block';
-    } else {
-      cancelBtn.style.display = 'none';
-    }
-  });
-
-  // Check periodically
-  setInterval(() => {
-    chrome.storage.local.get(['activeOperation'], (result) => {
-      const cancelBtn = document.getElementById('cancelOperation');
-      if (result.activeOperation) {
-        cancelBtn.style.display = 'block';
-      } else {
-        cancelBtn.style.display = 'none';
-      }
-    });
-  }, 1000);
-}
-
-/**
- * Updates download progress display
+ * Updates download progress display and cancel button visibility.
+ * Single polling loop replaces the previous two separate setIntervals.
  */
 function updateProgress() {
   chrome.storage.local.get(['activeOperation', 'downloadQueue', 'totalDownloads', 'downloadProgress', 'downloadCounts'], (result) => {
+    // --- Cancel button visibility (was separate checkActiveOperation) ---
+    const cancelBtn = document.getElementById('cancelOperation');
+    cancelBtn.style.display = result.activeOperation ? 'block' : 'none';
+
+    // --- Download progress ---
     const total = result.totalDownloads || 0;
     const progress = result.downloadProgress || {};
     const counts = result.downloadCounts;

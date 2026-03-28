@@ -271,15 +271,8 @@ var MediaScanner = {
       }
     }
 
-    // Filter results based on requested type
-    let finalResults = Array.from(allMediaData.values());
-    if (filterType === 'saveImages') {
-      finalResults = finalResults.filter(item => !item.filename.toLowerCase().endsWith('.mp4'));
-    } else if (filterType === 'saveVideos') {
-      finalResults = finalResults.filter(item => item.filename.toLowerCase().endsWith('.mp4'));
-    }
-
-    return finalResults;
+    // allMediaData already contains only filtered items (filtered per-batch above)
+    return Array.from(allMediaData.values());
   },
 
   async unsaveAll() {
