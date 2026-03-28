@@ -228,7 +228,13 @@ function updateProgress() {
       // Clear progress after all (including failures) are finished
       if (!result.activeOperation && queue.length === 0 && completed + failed === total) {
         setTimeout(() => {
-          chrome.storage.local.remove(['totalDownloads', 'downloadProgress', 'downloadCounts']);
+          chrome.storage.local.remove([
+            'totalDownloads',
+            'downloadProgress',
+            'downloadCounts',
+            'downloadQueue',
+            'downloadDatePath'
+          ]);
           progressElement.style.display = 'none';
         }, PROGRESS_CLEAR_DELAY);
       }

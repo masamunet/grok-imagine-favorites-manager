@@ -40,6 +40,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // Handle Main Actions
   (async () => {
     try {
+      await resetFinishedDownloadState();
       chrome.storage.local.set({ activeOperation: true });
 
       if (action.startsWith('save')) {
@@ -62,6 +63,30 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   sendResponse({ success: true, status: 'started' });
   return false;
 });
+
+async function resetFinishedDownloadState() {
+  const result = await chrome.storage.local.get([
+    'downloadQueue',
+    'downloadDatePath',
+    'downloadCounts',
+    'totalDownloads',
+    'downloadProgress'
+  ]);
+  const queue = result.downloadQueue || [];
+  const total = result.totalDownloads || 0;
+  const progress = result.downloadProgress || {};
+  const finishedCount = Object.values(progress).filter(state => state === 'complete' || state === 'failed').length;
+
+  if (queue.length === 0 && (total === 0 || finishedCount >= total)) {
+    await chrome.storage.local.remove([
+      'downloadQueue',
+      'downloadDatePath',
+      'downloadCounts',
+      'totalDownloads',
+      'downloadProgress'
+    ]);
+  }
+}
 
 /**
  * High-level flow for saving media
