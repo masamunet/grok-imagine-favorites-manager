@@ -27,6 +27,7 @@ const STARTUP_DELAY = 3000; // 3 seconds grace period
 // Semaphore for concurrent tab analysis (prevents tab explosion)
 const MAX_CONCURRENT_TABS = 3;
 let activeTabCount = 0;
+let isProcessingDownloads = false;
 
 // Resume download queue on SW restart
 chrome.storage.local.get(['downloadQueue'], (result) => {
@@ -42,7 +43,7 @@ chrome.storage.local.get(['downloadQueue'], (result) => {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'startDownloads') {
     handleDownloads(request.media)
-      .then(() => { try { sendResponse({ success: true }); } catch (e) { } })
+      .then((result) => { try { sendResponse({ success: true, ...result }); } catch (e) { } })
       .catch(error => { try { sendResponse({ success: false, error: error.message }); } catch (e) { } });
     return true;
   }
@@ -552,57 +553,99 @@ function switchTab() {
 async function handleDownloads(media) {
   if (!Array.isArray(media) || media.length === 0) throw new Error('No media provided');
 
-  // Re-entry guard: reject if already downloading
-  const existing = await chrome.storage.local.get(['downloadQueue']);
-  if (existing.downloadQueue && existing.downloadQueue.length > 0) {
-    throw new Error('Download already in progress');
+  const existing = await chrome.storage.local.get([
+    'activeOperation',
+    'downloadQueue',
+    'downloadDatePath',
+    'downloadCounts',
+    'totalDownloads',
+    'downloadProgress'
+  ]);
+  const existingQueue = existing.downloadQueue || [];
+  const queuedKeys = new Set(existingQueue.map(item => `${item.filename}::${item.url}`));
+  const newMedia = media.filter(item => {
+    const key = `${item.filename}::${item.url}`;
+    if (queuedKeys.has(key)) return false;
+    queuedKeys.add(key);
+    return true;
+  });
+
+  if (newMedia.length === 0) {
+    return { queued: 0, total: existing.totalDownloads || 0 };
   }
 
-  const videoCount = media.filter(item => item.filename && item.filename.toLowerCase().endsWith('.mp4')).length;
-  const imageCount = media.length - videoCount;
+  const videoCount = newMedia.filter(item => item.filename && item.filename.toLowerCase().endsWith('.mp4')).length;
+  const imageCount = newMedia.length - videoCount;
+  const reuseSession = Boolean(existing.downloadDatePath) && (
+    existing.activeOperation || existingQueue.length > 0 || isProcessingDownloads
+  );
 
+  await chrome.storage.local.set({
+    totalDownloads: reuseSession ? (existing.totalDownloads || 0) + newMedia.length : newMedia.length,
+    downloadProgress: reuseSession ? (existing.downloadProgress || {}) : {},
+    downloadCounts: {
+      video: (reuseSession ? (existing.downloadCounts?.video || 0) : 0) + videoCount,
+      image: (reuseSession ? (existing.downloadCounts?.image || 0) : 0) + imageCount
+    },
+    downloadQueue: existingQueue.concat(newMedia),
+    downloadDatePath: reuseSession ? existing.downloadDatePath : buildDownloadDatePath()
+  });
+
+  if (!isProcessingDownloads) {
+    processNextDownload();
+  }
+
+  return {
+    queued: newMedia.length,
+    total: (reuseSession ? (existing.totalDownloads || 0) : 0) + newMedia.length
+  };
+}
+
+async function processNextDownload() {
+  if (isProcessingDownloads) return;
+  isProcessingDownloads = true;
+
+  try {
+    while (true) {
+      const data = await chrome.storage.local.get(['downloadQueue', 'downloadDatePath']);
+      const queue = data.downloadQueue || [];
+
+      if (queue.length === 0) break;
+
+      const item = queue.shift();
+      await chrome.storage.local.set({ downloadQueue: queue });
+
+      if (item.url && item.filename) {
+        const datePath = data.downloadDatePath || 'unknown';
+        chrome.downloads.download({
+          url: item.url,
+          filename: `${DOWNLOAD_CONFIG.FOLDER}/${datePath}/${item.filename}`,
+          saveAs: false
+        });
+      }
+
+      if (queue.length > 0) {
+        await new Promise(resolve => setTimeout(resolve, DOWNLOAD_CONFIG.RATE_LIMIT_MS));
+      }
+    }
+  } finally {
+    isProcessingDownloads = false;
+
+    const pending = await chrome.storage.local.get(['downloadQueue']);
+    if ((pending.downloadQueue || []).length > 0) {
+      processNextDownload();
+    }
+  }
+}
+
+function buildDownloadDatePath() {
   const now = new Date();
   const yyyy = now.getFullYear();
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const dd = String(now.getDate()).padStart(2, '0');
   const hh = String(now.getHours()).padStart(2, '0');
   const min = String(now.getMinutes()).padStart(2, '0');
-  const datePath = `${yyyy}_${mm}_${dd}/${hh}_${min}`;
-
-  await chrome.storage.local.set({
-    totalDownloads: media.length,
-    downloadProgress: {},
-    downloadCounts: { video: videoCount, image: imageCount },
-    downloadQueue: media,
-    downloadDatePath: datePath
-  });
-
-  processNextDownload();
-}
-
-async function processNextDownload() {
-  const data = await chrome.storage.local.get(['downloadQueue', 'downloadDatePath']);
-  const queue = data.downloadQueue || [];
-
-  if (queue.length === 0) return;
-
-  // Pop first item
-  const item = queue.shift();
-  await chrome.storage.local.set({ downloadQueue: queue });
-
-  if (item.url && item.filename) {
-    const datePath = data.downloadDatePath || 'unknown';
-    chrome.downloads.download({
-      url: item.url,
-      filename: `${DOWNLOAD_CONFIG.FOLDER}/${datePath}/${item.filename}`,
-      saveAs: false
-    });
-  }
-
-  // Schedule next download after rate limit (non-blocking)
-  if (queue.length > 0) {
-    setTimeout(processNextDownload, DOWNLOAD_CONFIG.RATE_LIMIT_MS);
-  }
+  return `${yyyy}_${mm}_${dd}/${hh}_${min}`;
 }
 
 chrome.downloads.onChanged.addListener((delta) => {

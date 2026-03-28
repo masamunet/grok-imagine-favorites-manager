@@ -62,9 +62,26 @@ var Api = {
   /**
    * Send collected media list to background script to start downloads
    */
-  startDownloads(mediaList) {
-    if (!mediaList || mediaList.length === 0) return;
-    chrome.runtime.sendMessage({ action: 'startDownloads', media: mediaList });
+  async startDownloads(mediaList) {
+    if (!mediaList || mediaList.length === 0) {
+      return { success: true, queued: 0 };
+    }
+
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({ action: 'startDownloads', media: mediaList }, (response) => {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+          return;
+        }
+
+        if (response && response.success) {
+          resolve(response);
+          return;
+        }
+
+        reject(new Error(response?.error || 'Failed to queue downloads'));
+      });
+    });
   }
 };
 

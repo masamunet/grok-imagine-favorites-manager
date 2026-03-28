@@ -202,10 +202,11 @@ function checkActiveOperation() {
  * Updates download progress display
  */
 function updateProgress() {
-  chrome.storage.local.get(['totalDownloads', 'downloadProgress', 'downloadCounts'], (result) => {
+  chrome.storage.local.get(['activeOperation', 'downloadQueue', 'totalDownloads', 'downloadProgress', 'downloadCounts'], (result) => {
     const total = result.totalDownloads || 0;
     const progress = result.downloadProgress || {};
     const counts = result.downloadCounts;
+    const queue = result.downloadQueue || [];
 
     const progressElement = document.getElementById('progress');
     const progressText = document.getElementById('progressText');
@@ -225,7 +226,7 @@ function updateProgress() {
       progressText.textContent = text;
 
       // Clear progress after all (including failures) are finished
-      if (completed + failed === total) {
+      if (!result.activeOperation && queue.length === 0 && completed + failed === total) {
         setTimeout(() => {
           chrome.storage.local.remove(['totalDownloads', 'downloadProgress', 'downloadCounts']);
           progressElement.style.display = 'none';

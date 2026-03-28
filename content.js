@@ -83,17 +83,26 @@ async function handleSaveFlow(type) {
 
     // 2. Deep Analysis (Runs for BOTH ScanOnly and Download)
     window.ProgressModal.update(50, `Found ${foundItems.length} items. Starting Deep Analysis (Tabs)...`);
-    const analyzedMedia = await window.MediaScanner.prepareForDownload(foundItems, type);
+    let queuedCount = 0;
+    const analyzedMedia = await window.MediaScanner.prepareForDownload(
+      foundItems,
+      type,
+      async (batchMedia, stats) => {
+        await window.Api.startDownloads(batchMedia);
+        queuedCount += batchMedia.length;
+
+        const progress = 50 + ((stats.processed / stats.total) * 45);
+        window.ProgressModal.update(progress, `Analyzing ${stats.processed}/${stats.total}... ${queuedCount} files queued.`);
+        window.ProgressModal.updateSubStatus(`解析できた分から順次ダウンロード中: ${queuedCount} 件`);
+      }
+    );
 
     if (analyzedMedia.length === 0) {
       throw new Error('No downloadable media could be resolved from analysis.');
     }
 
-    // 4. Download
-    window.ProgressModal.update(100, `Ready to download ${analyzedMedia.length} files. Starting...`);
-
-    // Send work to background script
-    window.Api.startDownloads(analyzedMedia);
+    window.ProgressModal.update(100, `${analyzedMedia.length} files queued. Downloads continue in the background.`);
+    window.ProgressModal.updateSubStatus('解析完了。残りのダウンロードはバックグラウンドで継続します。');
 
   } catch (error) {
     if (error.message === 'Operation cancelled by user') {
@@ -124,7 +133,6 @@ async function handleUnsaveFlow() {
 
     // Delegate core work to MediaScanner
     const processedCount = await window.MediaScanner.unsaveAll();
-
     window.ProgressModal.update(100, `Done! Unfavorited ${processedCount} items.`);
 
     await window.Utils.sleep(1000);

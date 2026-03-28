@@ -203,7 +203,7 @@ var MediaScanner = {
     return foundItems;
   },
 
-  async prepareForDownload(items, filterType) {
+  async prepareForDownload(items, filterType, onBatchReady) {
     const allMediaData = new Map(); // dedupKey (id+ext) -> {url, filename, type}
     const CONCURRENCY = 3; // 同時分析数（サーバー負荷を配慮）
 
@@ -224,19 +224,45 @@ var MediaScanner = {
 
       const batchResults = await Promise.all(promises);
 
+      const batchReady = [];
+
       for (const results of batchResults) {
         if (Array.isArray(results) && results.length > 0) {
+          const perItemMedia = new Map();
+
           results.forEach(res => {
             if (res.url) {
               const ext = res.type === 'video' ? 'mp4' : 'jpg';
               const filename = `${res.id}.${ext}`;
               const dedupKey = `${res.id}.${ext}`;
-              if (!allMediaData.has(dedupKey)) {
-                allMediaData.set(dedupKey, { url: res.url, filename, type: res.type });
+              if (!perItemMedia.has(dedupKey)) {
+                perItemMedia.set(dedupKey, { url: res.url, filename, type: res.type });
               }
             }
           });
+
+          let readyItems = Array.from(perItemMedia.values());
+          if (filterType === 'saveImages') {
+            readyItems = readyItems.filter(item => !item.filename.toLowerCase().endsWith('.mp4'));
+          } else if (filterType === 'saveVideos') {
+            readyItems = readyItems.filter(item => item.filename.toLowerCase().endsWith('.mp4'));
+          }
+
+          readyItems.forEach(item => {
+            if (!allMediaData.has(item.filename)) {
+              allMediaData.set(item.filename, item);
+              batchReady.push(item);
+            }
+          });
         }
+      }
+
+      if (batchReady.length > 0 && typeof onBatchReady === 'function') {
+        await onBatchReady(batchReady, {
+          processed: Math.min(i + CONCURRENCY, items.length),
+          total: items.length,
+          queued: allMediaData.size
+        });
       }
 
       // バッチ間のディレイ（サーバー負荷軽減）
@@ -245,22 +271,8 @@ var MediaScanner = {
       }
     }
 
-    // Remove image thumbnails that have a matching video (same ID)
-    const videoIds = new Set();
-    for (const [key, item] of allMediaData) {
-      if (item.type === 'video') videoIds.add(item.filename.replace('.mp4', ''));
-    }
-    for (const [key, item] of allMediaData) {
-      if (item.type === 'image' && videoIds.has(item.filename.replace('.jpg', ''))) {
-        allMediaData.delete(key);
-      }
-    }
-
     // Filter results based on requested type
     let finalResults = Array.from(allMediaData.values());
-
-    const rawVideoCount = finalResults.filter(item => item.filename.endsWith('.mp4')).length;
-    const rawImageCount = finalResults.length - rawVideoCount;
     if (filterType === 'saveImages') {
       finalResults = finalResults.filter(item => !item.filename.toLowerCase().endsWith('.mp4'));
     } else if (filterType === 'saveVideos') {
