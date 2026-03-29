@@ -378,14 +378,14 @@ function networkSniffer() {
     if (url.includes('.mp4') || url.includes('.jpg') || url.includes('.png') || url.includes('.webp')) {
       if (!collectedSet.has(url)) {
         collectedSet.add(url);
-        // Batch DOM write to next animation frame to avoid repeated JSON.stringify + attribute mutations
+        // Batch DOM write with setTimeout (rAF doesn't fire in background tabs)
         if (!_flushScheduled) {
           _flushScheduled = true;
-          requestAnimationFrame(() => {
+          setTimeout(() => {
             relay.dataset.collectedUrls = JSON.stringify([...collectedSet]);
             relay.setAttribute('data-timestamp', Date.now());
             _flushScheduled = false;
-          });
+          }, 0);
         }
       }
     }
@@ -437,8 +437,7 @@ async function scrapeAndIntercept() {
   const baselineCount = baselineUrls.length;
 
   const findAllBtns = () => {
-    // Narrow selector to elements with aria-label to avoid querying all buttons/links on the page
-    const btns = Array.from(document.querySelectorAll('button[aria-label], a[aria-label], [role="button"][aria-label], a[download], button[title], a[title]'));
+    const btns = Array.from(document.querySelectorAll('button, a, [role="button"]'));
     return btns.filter(b => {
       const label = (b.getAttribute('aria-label') || '').toLowerCase();
       // Use textContent instead of innerText to avoid forced layout reflow
