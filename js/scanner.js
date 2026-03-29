@@ -334,9 +334,11 @@ var MediaScanner = {
           } catch (e) { }
         }
 
-        // 2. API Fallback (Only if we can identify the ID and haven't clicked)
+        // 2. Record ID and API Fallback
         const postData = window.Utils.extractPostDataFromElement(card);
         if (postData && postData.id && !processedIds.has(postData.id)) {
+          // Always record ID regardless of click path to prevent re-processing
+          // if React re-mounts the card element (which would strip dataset.grokUnsaved)
           processedIds.add(postData.id);
           if (!clicked) {
             card.dataset.grokUnsaved = 'true';

@@ -14,57 +14,62 @@ window.GrokModules = {
 
 /**
  * Message listener for actions from popup
+ * Guard prevents duplicate listeners when popup.js re-injects scripts on a page
+ * where manifest.json content_scripts are already loaded.
  */
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  const { action } = request;
-  if (window.Utils) window.Utils.Logger.log('[Content] Message received:', action);
+if (!window._grokListenerRegistered) {
+  window._grokListenerRegistered = true;
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    const { action } = request;
+    if (window.Utils) window.Utils.Logger.log('[Content] Message received:', action);
 
-  if (action === 'ping') {
-    // Basic connectivity check
-    if (window.ProgressModal) {
-      sendResponse({ loaded: true });
-    } else {
-      // Retry logic often handles this, but good to be explicit
-      sendResponse({ loaded: false });
+    if (action === 'ping') {
+      // Basic connectivity check
+      if (window.ProgressModal) {
+        sendResponse({ loaded: true });
+      } else {
+        // Retry logic often handles this, but good to be explicit
+        sendResponse({ loaded: false });
+      }
+      return true;
     }
-    return true;
-  }
 
-  if (action === 'cancelOperation') {
-    const wasCancelled = Boolean(window.ProgressModal);
-    if (window.ProgressModal) window.ProgressModal.cancel();
-    chrome.storage.local.set({ activeOperation: false });
-    sendResponse({ success: wasCancelled });
-    return;
-  }
-
-  // Handle Main Actions
-  const SAVE_ACTIONS = new Set(['saveImages', 'saveVideos', 'saveBoth', 'upscaleVideos']);
-  (async () => {
-    try {
-      await resetFinishedDownloadState();
-      chrome.storage.local.set({ activeOperation: true });
-
-      if (SAVE_ACTIONS.has(action)) {
-        await handleSaveFlow(action);
-      } else if (action === 'unsaveAll') {
-        await handleUnsaveFlow();
-      }
-    } catch (error) {
-      console.error('[GrokManager] Error handling action:', error);
-      if (window.ProgressModal) window.ProgressModal.hide();
-      if (!error.message.includes('cancelled')) {
-        alert(`Error: ${error.message}`);
-      }
-    } finally {
+    if (action === 'cancelOperation') {
+      const wasCancelled = Boolean(window.ProgressModal);
+      if (window.ProgressModal) window.ProgressModal.cancel();
       chrome.storage.local.set({ activeOperation: false });
+      sendResponse({ success: wasCancelled });
+      return;
     }
-  })();
 
-  // Send immediate response so Popup doesn't wait (and can close cleanly)
-  sendResponse({ success: true, status: 'started' });
-  return false;
-});
+    // Handle Main Actions
+    const SAVE_ACTIONS = new Set(['saveImages', 'saveVideos', 'saveBoth', 'upscaleVideos']);
+    (async () => {
+      try {
+        await resetFinishedDownloadState();
+        chrome.storage.local.set({ activeOperation: true });
+
+        if (SAVE_ACTIONS.has(action)) {
+          await handleSaveFlow(action);
+        } else if (action === 'unsaveAll') {
+          await handleUnsaveFlow();
+        }
+      } catch (error) {
+        console.error('[GrokManager] Error handling action:', error);
+        if (window.ProgressModal) window.ProgressModal.hide();
+        if (!error.message.includes('cancelled')) {
+          alert(`Error: ${error.message}`);
+        }
+      } finally {
+        chrome.storage.local.set({ activeOperation: false });
+      }
+    })();
+
+    // Send immediate response so Popup doesn't wait (and can close cleanly)
+    sendResponse({ success: true, status: 'started' });
+    return false;
+  });
+}
 
 async function resetFinishedDownloadState() {
   const result = await chrome.storage.local.get([
@@ -123,6 +128,13 @@ async function handleSaveFlow(type) {
         window.ProgressModal.updateSubStatus(`解析できた分から順次ダウンロード中: ${queuedCount} 件`);
       }
     );
+
+    // Check cancellation BEFORE checking empty results to avoid showing an error
+    // when the user intentionally cancelled mid-analysis
+    if (window.ProgressModal?.isCancelled()) {
+      window.ProgressModal.hide();
+      return;
+    }
 
     if (analyzedMedia.length === 0) {
       throw new Error('No downloadable media could be resolved from analysis.');
