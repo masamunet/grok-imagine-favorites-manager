@@ -38,12 +38,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   // Handle Main Actions
+  const SAVE_ACTIONS = new Set(['saveImages', 'saveVideos', 'saveBoth', 'upscaleVideos']);
   (async () => {
     try {
       await resetFinishedDownloadState();
       chrome.storage.local.set({ activeOperation: true });
 
-      if (action.startsWith('save')) {
+      if (SAVE_ACTIONS.has(action)) {
         await handleSaveFlow(action);
       } else if (action === 'unsaveAll') {
         await handleUnsaveFlow();

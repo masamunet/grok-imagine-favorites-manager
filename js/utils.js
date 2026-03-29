@@ -165,8 +165,9 @@ var Utils = {
       }
 
       // Strategy 5: Ultra fallback: innerHTML of the topmost ancestor we found
-      // サイズ制限: 巨大なコンテナのinnerHTMLを読むとメインスレッドが長時間ブロックするため
+      // childElementCount が多いコンテナは innerHTML シリアライズが巨大になりメインスレッドをブロックするためスキップ
       const topContainer = searchedElements[searchedElements.length - 1];
+      if (topContainer.childElementCount > 50) return null;
       const rawHtml = topContainer.innerHTML || topContainer.outerHTML || "";
       const html = rawHtml.length > 50000 ? rawHtml.slice(0, 50000) : rawHtml;
       const match = html.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);

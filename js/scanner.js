@@ -97,14 +97,14 @@ var MediaScanner = {
    */
   async expandPageToBottom() {
     let scrollContainer = this.getScrollContainer();
-    console.log('[Scanner] Identified scroll container:', scrollContainer);
+    window.Utils.Logger.log('[Scanner] Identified scroll container:', scrollContainer);
 
     let lastScrollHeight = 0;
     let unchangedCount = 0;
     const MAX_UNCHANGED = 3;
 
     while (true) {
-      if (window.ProgressModal.isCancelled()) throw new Error('Operation cancelled by user');
+      if (window.ProgressModal?.isCancelled()) throw new Error('Operation cancelled by user');
 
       // Handle Window vs Element logic
       const isWindow = scrollContainer === window;
@@ -124,18 +124,18 @@ var MediaScanner = {
 
       if (Math.abs(newScrollHeight - lastScrollHeight) < 10) {
         unchangedCount++;
-        console.log(`[Scanner] Height unchanged (${unchangedCount}/${MAX_UNCHANGED})`);
+        window.Utils.Logger.log(`[Scanner] Height unchanged (${unchangedCount}/${MAX_UNCHANGED})`);
       } else {
         unchangedCount = 0;
         lastScrollHeight = newScrollHeight;
-        console.log(`[Scanner] Height increased to ${newScrollHeight}`);
+        window.Utils.Logger.log(`[Scanner] Height increased to ${newScrollHeight}`);
 
         // Update container if page structure changed (SPA Dynamic loading)
         scrollContainer = this.getScrollContainer();
       }
 
       if (unchangedCount >= MAX_UNCHANGED) {
-        console.log('[Scanner] Page expansion finished.');
+        window.Utils.Logger.log('[Scanner] Page expansion finished.');
         break;
       }
     }
@@ -288,13 +288,13 @@ var MediaScanner = {
    * Unfavorites all items found on the page
    */
   async unsaveAllLegacy() {
-    console.log('[Scanner] Starting unsave sweep...');
+    window.Utils.Logger.log('[Scanner] Starting unsave sweep...');
 
     // Inject Fiber extractor to get correct post IDs (especially for video cards)
     try {
       await this.injectFiberExtractor();
     } catch (e) {
-      console.warn('[Scanner] Fiber injection failed for unsave, falling back to DOM extraction');
+      window.Utils.Logger.warn('[Scanner] Fiber injection failed for unsave, falling back to DOM extraction');
     }
 
     let scrollContainer = document.documentElement;
@@ -341,7 +341,11 @@ var MediaScanner = {
           }
         }
 
-        window.ProgressModal.update(Math.min(98, totalProcessed * 2), `Unfavorited ${totalProcessed} items...`);
+        // 対数スケールで進捗表示: 25件=50%, 100件=80%, 1000件=95% (上限98%)
+        window.ProgressModal.update(
+          Math.min(98, Math.round(40 * Math.log10(totalProcessed + 1))),
+          `Unfavorited ${totalProcessed} items...`
+        );
       }
 
       // Scroll logic

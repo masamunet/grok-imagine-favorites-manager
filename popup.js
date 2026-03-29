@@ -7,6 +7,9 @@
 const UPDATE_INTERVAL = 1000; // Update progress every second
 const PROGRESS_CLEAR_DELAY = 5000; // Clear progress after 5 seconds
 
+// Flag to prevent scheduling multiple storage-clear timeouts from repeated poll ticks
+let progressClearPending = false;
+
 /**
  * Initialize event listeners when DOM is ready
  */
@@ -174,7 +177,12 @@ function cancelCurrentOperation() {
  * Single polling loop replaces the previous two separate setIntervals.
  */
 function updateProgress() {
+  // Guard: popup may have been closed while a storage callback was in flight
+  if (!document.getElementById('cancelOperation')) return;
+
   chrome.storage.local.get(['activeOperation', 'downloadQueue', 'totalDownloads', 'downloadProgress', 'downloadCounts'], (result) => {
+    if (!document.getElementById('cancelOperation')) return; // closed between request and callback
+
     // --- Cancel button visibility (was separate checkActiveOperation) ---
     const cancelBtn = document.getElementById('cancelOperation');
     cancelBtn.style.display = result.activeOperation ? 'block' : 'none';
@@ -203,7 +211,9 @@ function updateProgress() {
       progressText.textContent = text;
 
       // Clear progress after all (including failures) are finished
-      if (!result.activeOperation && queue.length === 0 && completed + failed === total) {
+      // progressClearPending flag prevents multiple setTimeout calls from repeated poll ticks
+      if (!result.activeOperation && queue.length === 0 && completed + failed === total && !progressClearPending) {
+        progressClearPending = true;
         setTimeout(() => {
           chrome.storage.local.remove([
             'totalDownloads',
@@ -212,7 +222,10 @@ function updateProgress() {
             'downloadQueue',
             'downloadDatePath'
           ]);
-          progressElement.style.display = 'none';
+          if (document.getElementById('progress')) {
+            progressElement.style.display = 'none';
+          }
+          progressClearPending = false;
         }, PROGRESS_CLEAR_DELAY);
       }
     } else {

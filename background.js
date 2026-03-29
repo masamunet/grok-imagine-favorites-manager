@@ -152,8 +152,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
  * Opens a background tab, injects network sniffer, interacts, captures URLs
  */
 async function analyzePostInTab(postId, postUrl) {
-  // Semaphore: wait until a slot is available
+  // Semaphore: wait until a slot is available (max 30s to avoid infinite spin)
+  const semaphoreDeadline = Date.now() + 30000;
   while (activeTabCount >= MAX_CONCURRENT_TABS) {
+    if (Date.now() > semaphoreDeadline) throw new Error(`Semaphore timeout for post ${postId}`);
     await new Promise(r => setTimeout(r, 300));
   }
   activeTabCount++;
@@ -330,6 +332,10 @@ function networkSniffer() {
     relay.style.display = 'none';
     document.body.appendChild(relay);
   }
+
+  // Guard against double-patching if sniffer is injected more than once on the same tab
+  if (relay.dataset.snifferActive === 'true') return;
+  relay.dataset.snifferActive = 'true';
 
   const collectedSet = new Set();
   try {
@@ -508,10 +514,6 @@ async function scrapeAndIntercept(mode) {
  * Collects media URLs directly from DOM (img src, video src/poster)
  * Runs in ISOLATED world - captures images that sniffer cannot catch via fetch/XHR
  */
-/**
- * Collects media URLs directly from DOM (img src, video src/poster)
- * Runs in ISOLATED world - captures images that sniffer cannot catch via fetch/XHR
- */
 function collectDomMediaUrls() {
   const urls = new Set();
   document.querySelectorAll('img').forEach(img => {
@@ -621,10 +623,17 @@ async function processNextDownload() {
 
       if (item.url && item.filename) {
         const datePath = data.downloadDatePath || 'unknown';
-        chrome.downloads.download({
-          url: item.url,
-          filename: `${DOWNLOAD_CONFIG.FOLDER}/${datePath}/${item.filename}`,
-          saveAs: false
+        await new Promise((resolve) => {
+          chrome.downloads.download({
+            url: item.url,
+            filename: `${DOWNLOAD_CONFIG.FOLDER}/${datePath}/${item.filename}`,
+            saveAs: false
+          }, (downloadId) => {
+            if (chrome.runtime.lastError) {
+              console.error(`[Background] Download failed for ${item.filename}:`, chrome.runtime.lastError.message);
+            }
+            resolve(downloadId);
+          });
         });
       }
 
@@ -633,9 +642,10 @@ async function processNextDownload() {
       }
     }
   } finally {
-    isProcessingDownloads = false;
-
+    // Keep lock held during storage check to prevent a concurrent processNextDownload
+    // from starting between the flag reset and the pending-queue read
     const pending = await chrome.storage.local.get(['downloadQueue']);
+    isProcessingDownloads = false;
     if ((pending.downloadQueue || []).length > 0) {
       processNextDownload();
     }

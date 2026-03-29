@@ -12,33 +12,30 @@ var Api = {
    * Returns a Promise that resolves to an array of media objects [{url, id, type}]
    */
   async requestAnalysis(postId, postUrl, attempt = 0) {
-    return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage({ action: 'analyzePost', postId, url: postUrl }, async (response) => {
+    // Wrap sendMessage in a plain (non-async) Promise to avoid swallowed rejections
+    // that occur when an async callback is passed to chrome.runtime.sendMessage
+    const response = await new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({ action: 'analyzePost', postId, url: postUrl }, (res) => {
         if (chrome.runtime.lastError) {
-          // If extension context invalidated or other runtime error
-          return reject(chrome.runtime.lastError);
-        }
-
-        if (response && response.success) {
-          resolve(response.data || []);
+          reject(chrome.runtime.lastError);
         } else {
-          // Check for "Extension warming up" error and retry
-          const errorMsg = response?.error || 'Unknown analysis error';
-          if (errorMsg.includes('warming up') && attempt < 3) {
-            console.log(`[Api] Extension warming up, retrying analysis for ${postId} (Attempt ${attempt + 1})...`);
-            await new Promise(r => setTimeout(r, 1000));
-            try {
-              const result = await this.requestAnalysis(postId, postUrl, attempt + 1);
-              resolve(result);
-            } catch (e) {
-              reject(e);
-            }
-          } else {
-            reject(new Error(errorMsg));
-          }
+          resolve(res);
         }
       });
     });
+
+    if (response && response.success) {
+      return response.data || [];
+    }
+
+    const errorMsg = response?.error || 'Unknown analysis error';
+    if (errorMsg.includes('warming up') && attempt < 3) {
+      console.log(`[Api] Extension warming up, retrying analysis for ${postId} (Attempt ${attempt + 1})...`);
+      await new Promise(r => setTimeout(r, 1000));
+      return this.requestAnalysis(postId, postUrl, attempt + 1);
+    }
+
+    throw new Error(errorMsg);
   },
 
   /**
