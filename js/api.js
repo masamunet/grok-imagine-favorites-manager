@@ -49,6 +49,9 @@ var Api = {
         credentials: 'include',
         body: JSON.stringify({ id: postId })
       });
+      if (!response.ok) {
+        console.error(`[Api] Unlike failed for ${postId}: HTTP ${response.status}`);
+      }
       return response.ok;
     } catch (e) {
       console.error('[Api] Unlike Failed:', e);

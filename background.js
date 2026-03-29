@@ -68,6 +68,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'extractFiber') {
+    if (!sender.tab) {
+      sendResponse({ success: false, error: 'No associated tab for extractFiber request' });
+      return true;
+    }
     try {
       chrome.scripting.executeScript({
         target: { tabId: sender.tab.id },
@@ -266,15 +270,29 @@ async function analyzePostInTab(postId, postUrl) {
       // console.warn('[Background] Tab cleanup warning:', e.message); // Quieter cleanup
     }
 
+    // Deduplicate by path, preferring URLs that retain query strings
+    // (collectDomMediaUrls strips queries for dedup; sniffer keeps full URLs for auth tokens)
+    const pathMap = new Map();
+    for (const url of collectedMedia) {
+      if (!url || url.length <= 5) continue;
+      try {
+        const u = new URL(url);
+        const key = u.origin + u.pathname;
+        if (!pathMap.has(key) || u.search.length > 0) {
+          pathMap.set(key, url); // prefer URL with query params over path-only
+        }
+      } catch (e) {
+        pathMap.set(url, url);
+      }
+    }
+
     // Map URLs to formatted objects
-    return Array.from(collectedMedia)
-      .filter(url => url && url.length > 5)
-      .map(url => {
-        const id = extractPostIdFromUrl(url) || postId;
-        const isVideo = /\.mp4(\?|$)/i.test(url);
-        const type = isVideo ? 'video' : 'image';
-        return { url, id, type };
-      });
+    return Array.from(pathMap.values()).map(url => {
+      const id = extractPostIdFromUrl(url) || postId;
+      const isVideo = /\.mp4(\?|$)/i.test(url);
+      const type = isVideo ? 'video' : 'image';
+      return { url, id, type };
+    });
 
   } catch (e) {
     if (tabId) {
