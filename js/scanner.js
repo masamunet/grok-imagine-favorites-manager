@@ -109,6 +109,7 @@ var MediaScanner = {
     let lastScrollHeight = 0;
     let unchangedCount = 0;
     const MAX_UNCHANGED = 3;
+    let heightChangesSinceContainerCheck = 0;
 
     while (true) {
       if (window.ProgressModal?.isCancelled()) throw new Error('Operation cancelled by user');
@@ -137,8 +138,12 @@ var MediaScanner = {
         lastScrollHeight = newScrollHeight;
         window.Utils.Logger.log(`[Scanner] Height increased to ${newScrollHeight}`);
 
-        // Update container if page structure changed (SPA Dynamic loading)
-        scrollContainer = this.getScrollContainer();
+        // Re-check container only every 3 height changes to reduce getComputedStyle calls
+        heightChangesSinceContainerCheck++;
+        if (heightChangesSinceContainerCheck >= 3) {
+          scrollContainer = this.getScrollContainer();
+          heightChangesSinceContainerCheck = 0;
+        }
       }
 
       if (unchangedCount >= MAX_UNCHANGED) {
@@ -306,15 +311,13 @@ var MediaScanner = {
     let lastScrollHeight = 0;
 
     while (!window.ProgressModal.isCancelled()) {
-      const cards = document.querySelectorAll(window.SELECTORS.LIST_ITEM);
+      // :not セレクタで処理済みカードを除外し、再クエリのコストを削減
+      const cards = document.querySelectorAll(`${window.SELECTORS.LIST_ITEM}:not([data-grok-unsaved])`);
       let actedOnThisTurn = 0;
 
       for (let i = 0; i < cards.length; i++) {
         if (window.ProgressModal?.isCancelled()) break;
         const card = cards[i];
-
-        // DOM フラグで二重処理を防ぐ (extractPostDataFromElement が失敗してもクリック済みを記憶)
-        if (card.dataset.grokUnsaved) continue;
 
         // 1. Physical Click (Try this first as it's most robust)
         const unsaveBtn = card.querySelector(window.SELECTORS.UNSAVE_BUTTON);
@@ -353,7 +356,7 @@ var MediaScanner = {
         );
       }
 
-      // Scroll logic
+      // Scroll logic — yield between scrollHeight read and scrollTop write to avoid layout thrash
       const currentScrollHeight = scrollContainer.scrollHeight;
       if (currentScrollHeight === lastScrollHeight) unchangedCount++;
       else { unchangedCount = 0; lastScrollHeight = currentScrollHeight; }
@@ -361,6 +364,7 @@ var MediaScanner = {
       // Exit if no actions taken and scroll didn't change (end of list)
       if (actedOnThisTurn === 0 && unchangedCount >= 2) break;
 
+      await new Promise(r => setTimeout(r, 0)); // yield before write
       scrollContainer.scrollTop += window.innerHeight / 2;
       await window.Utils.sleep(window.CONFIG.SCROLL_DELAY_MS);
     }

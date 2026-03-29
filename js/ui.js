@@ -5,6 +5,14 @@
 var ProgressModal = {
   modal: null,
   cancelled: false,
+  // Cached DOM references — set once in create(), avoids getElementById on every update
+  _barEl: null,
+  _detailsEl: null,
+  _substatusEl: null,
+  _titleEl: null,
+  _subtitleEl: null,
+  _cancelBtnEl: null,
+  _lastProgress: -1,
 
   create() {
     if (this.modal) return;
@@ -31,48 +39,57 @@ var ProgressModal = {
       </div>`;
 
     document.body.appendChild(this.modal);
-    document.getElementById('grok-cancel-button').addEventListener('click', () => this.cancel());
+
+    // Cache all DOM references once
+    this._barEl = document.getElementById('grok-progress-bar');
+    this._detailsEl = document.getElementById('grok-progress-details');
+    this._substatusEl = document.getElementById('grok-progress-substatus');
+    this._titleEl = document.getElementById('grok-progress-title');
+    this._subtitleEl = document.getElementById('grok-progress-subtitle');
+    this._cancelBtnEl = document.getElementById('grok-cancel-button');
+    this._cancelBtnEl.addEventListener('click', () => this.cancel());
   },
 
   show(title, subtitle = '') {
     this.cancelled = false;
+    this._lastProgress = -1;
     this.create();
     this.modal.style.display = 'flex';
-    document.getElementById('grok-progress-title').textContent = title;
-    document.getElementById('grok-progress-subtitle').textContent = subtitle;
-    document.getElementById('grok-progress-bar').style.width = '0%';
-    document.getElementById('grok-progress-details').textContent = 'Starting...';
-    document.getElementById('grok-progress-substatus').textContent = '';
+    if (this._titleEl) this._titleEl.textContent = title;
+    if (this._subtitleEl) this._subtitleEl.textContent = subtitle;
+    if (this._barEl) this._barEl.style.width = '0%';
+    if (this._detailsEl) this._detailsEl.textContent = 'Starting...';
+    if (this._substatusEl) this._substatusEl.textContent = '';
 
-    const cancelBtn = document.getElementById('grok-cancel-button');
-    cancelBtn.textContent = 'Cancel Operation';
-    cancelBtn.disabled = false;
-    cancelBtn.style.opacity = '1';
+    if (this._cancelBtnEl) {
+      this._cancelBtnEl.textContent = 'Cancel Operation';
+      this._cancelBtnEl.disabled = false;
+      this._cancelBtnEl.style.opacity = '1';
+    }
   },
 
   update(progress, details) {
     if (!this.modal) return;
     const percentage = Math.min(100, Math.max(0, progress));
-    const bar = document.getElementById('grok-progress-bar');
-    if (bar) bar.style.width = `${percentage}%`;
-    const detailsEl = document.getElementById('grok-progress-details');
-    if (detailsEl) detailsEl.textContent = details;
+    // Throttle: skip DOM write if progress hasn't changed by at least 1%
+    if (Math.abs(percentage - this._lastProgress) < 1 && this._detailsEl && this._detailsEl.textContent === details) return;
+    this._lastProgress = percentage;
+    if (this._barEl) this._barEl.style.width = `${percentage}%`;
+    if (this._detailsEl) this._detailsEl.textContent = details;
   },
 
   updateSubStatus(text) {
     if (!this.modal) return;
-    const sub = document.getElementById('grok-progress-substatus');
-    if (sub) sub.textContent = text;
+    if (this._substatusEl) this._substatusEl.textContent = text;
   },
 
   cancel() {
     this.cancelled = true;
     this.update(0, 'Cancelling operation...');
-    const cancelBtn = document.getElementById('grok-cancel-button');
-    if (cancelBtn) {
-      cancelBtn.textContent = 'Cancelling...';
-      cancelBtn.disabled = true;
-      cancelBtn.style.opacity = '0.5';
+    if (this._cancelBtnEl) {
+      this._cancelBtnEl.textContent = 'Cancelling...';
+      this._cancelBtnEl.disabled = true;
+      this._cancelBtnEl.style.opacity = '0.5';
     }
     setTimeout(() => this.remove(), 1000);
   },
@@ -89,6 +106,14 @@ var ProgressModal = {
     if (this.modal) {
       this.modal.remove();
       this.modal = null;
+      // Clear cached references
+      this._barEl = null;
+      this._detailsEl = null;
+      this._substatusEl = null;
+      this._titleEl = null;
+      this._subtitleEl = null;
+      this._cancelBtnEl = null;
+      this._lastProgress = -1;
     }
   }
 };

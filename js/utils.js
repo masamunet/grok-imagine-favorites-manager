@@ -135,7 +135,7 @@ var Utils = {
       }
 
       // Strategy 2: Search for A tags INSIDE the element (if it's a container)
-      const links = element.querySelectorAll ? element.querySelectorAll('a') : [];
+      const links = element.querySelectorAll ? element.querySelectorAll('a[href*="/post/"], a[href*="/status/"], a[href*="/imagine/"]') : [];
       for (const link of links) {
         if (!link.href || link.href.includes('/profile/')) continue;
         const match = link.href.match(/\/(?:post|status|imagine\/post)\/([0-9a-f-]{36}|[0-9a-f]{8,})/i);
@@ -167,22 +167,25 @@ var Utils = {
         }
       }
 
-      // Strategy 5: Ultra fallback: innerHTML of the topmost ancestor we found
-      // childElementCount が多いコンテナは innerHTML シリアライズが巨大になりメインスレッドをブロックするためスキップ
+      // Strategy 5: Ultra fallback: TreeWalker over attributes (avoids innerHTML serialization)
       const topContainer = searchedElements[searchedElements.length - 1];
-      if (topContainer.childElementCount > 50) return null;
-      const rawHtml = topContainer.innerHTML || topContainer.outerHTML || "";
-      const html = rawHtml.length > 50000 ? rawHtml.slice(0, 50000) : rawHtml;
-      const match = html.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
-      if (match) {
-        const id = match[0].toLowerCase();
-        Utils.Logger.warn(`[Utils] Using ultra fallback ID from innerHTML: ${id}`);
-        return {
-          id,
-          url: `${window.location.origin}/imagine/post/${id}`,
-          strategy: 'HTML Regex Fallback',
-          isFallback: true
-        };
+      const uuidRe = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+      const walker = document.createTreeWalker(topContainer, NodeFilter.SHOW_ELEMENT, null);
+      let node = topContainer;
+      while (node) {
+        const check = node.getAttribute('href') || node.getAttribute('src') || node.getAttribute('data-id') || node.getAttribute('data-grok-extracted-id') || '';
+        const m = check.match(uuidRe);
+        if (m) {
+          const id = m[0].toLowerCase();
+          Utils.Logger.warn(`[Utils] Using TreeWalker fallback ID: ${id}`);
+          return {
+            id,
+            url: `${window.location.origin}/imagine/post/${id}`,
+            strategy: 'TreeWalker Fallback',
+            isFallback: true
+          };
+        }
+        node = walker.nextNode();
       }
 
       return null;

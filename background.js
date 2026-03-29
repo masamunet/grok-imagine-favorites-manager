@@ -109,15 +109,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
           const elements = Array.from(document.querySelectorAll('img, video, [data-testid="video-player"], [data-testid="video-component"]'));
           for (let i = 0; i < elements.length; i++) {
-            // 20件ごとにメインスレッドを解放してブラウザフリーズを防ぐ
-            if (i > 0 && i % 20 === 0) {
+            // 10件ごとにメインスレッドを解放（Fiber走査は1要素あたりの負荷が高い）
+            if (i > 0 && i % 10 === 0) {
               await new Promise(r => setTimeout(r, 0));
             }
             const el = elements[i];
+            // Skip elements that already have an extracted ID (e.g. from a prior injection)
+            if (el.hasAttribute('data-grok-extracted-id')) continue;
             try {
               let domNode = el;
               let found = false;
-              for (let domLevel = 0; domLevel < 10; domLevel++) {
+              for (let domLevel = 0; domLevel < 7; domLevel++) {
                 if (!domNode) break;
                 const reactPropsKey = Object.keys(domNode).find(key => key.startsWith('__reactFiber$'));
                 if (reactPropsKey) {
@@ -365,6 +367,7 @@ function networkSniffer() {
     existing.forEach(u => collectedSet.add(u));
   } catch (e) { }
 
+  let _flushScheduled = false;
   const pushUrl = (url) => {
     if (!url) return;
     if (typeof url !== 'string') {
@@ -375,8 +378,15 @@ function networkSniffer() {
     if (url.includes('.mp4') || url.includes('.jpg') || url.includes('.png') || url.includes('.webp')) {
       if (!collectedSet.has(url)) {
         collectedSet.add(url);
-        relay.dataset.collectedUrls = JSON.stringify([...collectedSet]);
-        relay.setAttribute('data-timestamp', Date.now());
+        // Batch DOM write to next animation frame to avoid repeated JSON.stringify + attribute mutations
+        if (!_flushScheduled) {
+          _flushScheduled = true;
+          requestAnimationFrame(() => {
+            relay.dataset.collectedUrls = JSON.stringify([...collectedSet]);
+            relay.setAttribute('data-timestamp', Date.now());
+            _flushScheduled = false;
+          });
+        }
       }
     }
   };
@@ -427,11 +437,13 @@ async function scrapeAndIntercept() {
   const baselineCount = baselineUrls.length;
 
   const findAllBtns = () => {
-    const btns = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+    // Narrow selector to elements with aria-label to avoid querying all buttons/links on the page
+    const btns = Array.from(document.querySelectorAll('button[aria-label], a[aria-label], [role="button"][aria-label], a[download], button[title], a[title]'));
     return btns.filter(b => {
-      const label = (b.ariaLabel || "").toLowerCase();
-      const text = (b.innerText || "").toLowerCase();
-      const title = (b.title || "").toLowerCase();
+      const label = (b.getAttribute('aria-label') || '').toLowerCase();
+      // Use textContent instead of innerText to avoid forced layout reflow
+      const text = (b.textContent || '').toLowerCase();
+      const title = (b.title || '').toLowerCase();
       const isDownload =
         label.includes('download') || text.includes('download') || title.includes('download') ||
         label.includes('ダウンロード') || text.includes('ダウンロード') || title.includes('ダウンロード') ||
