@@ -31,9 +31,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (action === 'cancelOperation') {
+    const wasCancelled = Boolean(window.ProgressModal);
     if (window.ProgressModal) window.ProgressModal.cancel();
     chrome.storage.local.set({ activeOperation: false });
-    sendResponse({ success: true });
+    sendResponse({ success: wasCancelled });
     return;
   }
 

@@ -249,7 +249,8 @@ var MediaScanner = {
           let readyItems = Array.from(perItemMedia.values());
           if (filterType === 'saveImages') {
             readyItems = readyItems.filter(item => !item.filename.toLowerCase().endsWith('.mp4'));
-          } else if (filterType === 'saveVideos') {
+          } else if (filterType === 'saveVideos' || filterType === 'upscaleVideos') {
+            // upscaleVideos: 動画のみを対象 (アップスケール処理はダウンロード後に手動で行う)
             readyItems = readyItems.filter(item => item.filename.toLowerCase().endsWith('.mp4'));
           }
 
@@ -312,8 +313,11 @@ var MediaScanner = {
       let actedOnThisTurn = 0;
 
       for (let i = 0; i < cards.length; i++) {
-        if (window.ProgressModal.isCancelled()) break;
+        if (window.ProgressModal?.isCancelled()) break;
         const card = cards[i];
+
+        // DOM フラグで二重処理を防ぐ (extractPostDataFromElement が失敗してもクリック済みを記憶)
+        if (card.dataset.grokUnsaved) continue;
 
         // 1. Physical Click (Try this first as it's most robust)
         const unsaveBtn = card.querySelector(window.SELECTORS.UNSAVE_BUTTON);
@@ -321,6 +325,7 @@ var MediaScanner = {
 
         if (unsaveBtn) {
           try {
+            card.dataset.grokUnsaved = 'true';
             unsaveBtn.click();
             clicked = true;
             actedOnThisTurn++;
@@ -334,6 +339,7 @@ var MediaScanner = {
         if (postData && postData.id && !processedIds.has(postData.id)) {
           processedIds.add(postData.id);
           if (!clicked) {
+            card.dataset.grokUnsaved = 'true';
             await window.Api.unlikePost(postData.id);
             actedOnThisTurn++;
             totalProcessed++;

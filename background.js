@@ -642,10 +642,11 @@ async function processNextDownload() {
       }
     }
   } finally {
-    // Keep lock held during storage check to prevent a concurrent processNextDownload
-    // from starting between the flag reset and the pending-queue read
-    const pending = await chrome.storage.local.get(['downloadQueue']);
+    // Release lock BEFORE storage read. JS is single-threaded: if handleDownloads runs
+    // during the await and starts a new processor, that processor sets the flag to true
+    // before its first await — so the restart call below becomes a safe no-op.
     isProcessingDownloads = false;
+    const pending = await chrome.storage.local.get(['downloadQueue']);
     if ((pending.downloadQueue || []).length > 0) {
       processNextDownload();
     }
