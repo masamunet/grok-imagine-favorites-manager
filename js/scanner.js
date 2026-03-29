@@ -22,6 +22,18 @@ var MediaScanner = {
   },
 
   /**
+   * Queries DOM for media elements using selectors from constants.js
+   * Single source of truth for the media query used in scanPage and collectVisibleItems.
+   */
+  _queryMediaElements() {
+    const selector = `${window.SELECTORS.IMAGE}, ${window.SELECTORS.VIDEO}`;
+    return Array.from(document.querySelectorAll(selector)).filter(el => {
+      if (el.tagName === 'IMG' && el.src && el.src.includes('/profile/')) return false;
+      return true;
+    });
+  },
+
+  /**
    * Phase 1: Expand Page and Scan (Visual Only)
    */
   async scanPage(visualizeOnly = false) {
@@ -37,12 +49,7 @@ var MediaScanner = {
       window.Utils.Logger.warn(`[Scanner] Main world injection failed: ${e.message}`);
     }
 
-    const mediaElements = Array.from(document.querySelectorAll(
-      'img[alt*="Generated" i], video, [data-testid="video-player"], [data-testid="video-component"], .video-js'
-    )).filter(el => {
-      if (el.tagName === 'IMG' && el.src && el.src.includes('/profile/')) return false;
-      return true;
-    });
+    const mediaElements = this._queryMediaElements();
 
     if (mediaElements.length === 0) {
       window.Utils.Logger.warn(`[Scanner] No media found. img=${document.querySelectorAll('img').length}, video=${document.querySelectorAll('video').length}`);
@@ -150,12 +157,7 @@ var MediaScanner = {
 
     // Use passed-in elements, or query DOM as fallback
     if (!mediaElements || mediaElements.length === 0) {
-      mediaElements = Array.from(document.querySelectorAll(
-        'img[alt*="Generated" i], video, [data-testid="video-player"], [data-testid="video-component"], .video-js'
-      )).filter(el => {
-        if (el.tagName === 'IMG' && el.src && el.src.includes('/profile/')) return false;
-        return true;
-      });
+      mediaElements = this._queryMediaElements();
     }
 
     window.Utils.Logger.log(`[Scanner] DOM上で ${mediaElements.length} 件のメディア要素候補を取得しました。`);
@@ -239,9 +241,8 @@ var MediaScanner = {
             if (res.url) {
               const ext = res.type === 'video' ? 'mp4' : 'jpg';
               const filename = `${res.id}.${ext}`;
-              const dedupKey = `${res.id}.${ext}`;
-              if (!perItemMedia.has(dedupKey)) {
-                perItemMedia.set(dedupKey, { url: res.url, filename, type: res.type });
+              if (!perItemMedia.has(filename)) {
+                perItemMedia.set(filename, { url: res.url, filename, type: res.type });
               }
             }
           });
@@ -281,14 +282,10 @@ var MediaScanner = {
     return Array.from(allMediaData.values());
   },
 
-  async unsaveAll() {
-    return this.unsaveAllLegacy();
-  },
-
   /**
    * Unfavorites all items found on the page
    */
-  async unsaveAllLegacy() {
+  async unsaveAll() {
     window.Utils.Logger.log('[Scanner] Starting unsave sweep...');
 
     // Inject Fiber extractor to get correct post IDs (especially for video cards)

@@ -25,7 +25,7 @@ var ItemClassifier = {
     const classification = isStrictlyImage ? this.TYPES.STATIC_IMAGE : this.TYPES.VIDEO_COMPLEX;
 
     // Debug logging for classification decisions
-    console.log(`[Classifier] Item ${index}:`, {
+    if (window.Utils) window.Utils.Logger.log(`[Classifier] Item ${index}:`, {
       classification,
       indicators: {
         hasVideoTag: !!video,

@@ -39,7 +39,7 @@ if (!window._grokListenerRegistered) {
       if (window.ProgressModal) window.ProgressModal.cancel();
       chrome.storage.local.set({ activeOperation: false });
       sendResponse({ success: wasCancelled });
-      return;
+      return true;
     }
 
     // Handle Main Actions

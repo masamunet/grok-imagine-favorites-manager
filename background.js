@@ -76,6 +76,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       chrome.scripting.executeScript({
         target: { tabId: sender.tab.id },
         func: async () => {
+          // NOTE: This is a duplicate of Utils.findUUIDinProps (js/utils.js).
+          // It must be inlined here because executeScript with world:'MAIN'
+          // serializes the function — it cannot reference external modules.
+          // If you change the UUID extraction logic, update BOTH copies.
           function findUUID(obj, depth = 0) {
             if (depth > 5 || !obj) return null;
             if (typeof obj === 'string') {
@@ -348,7 +352,7 @@ function networkSniffer() {
     relay = document.createElement('div');
     relay.id = 'grok-sniffer-relay';
     relay.style.display = 'none';
-    document.body.appendChild(relay);
+    (document.body || document.documentElement).appendChild(relay);
   }
 
   // Guard against double-patching if sniffer is injected more than once on the same tab
@@ -410,7 +414,7 @@ function networkSniffer() {
 /**
  * SCRAPER - Runs in ISOLATED world, clicks button and watches relay
  */
-async function scrapeAndIntercept(mode) {
+async function scrapeAndIntercept() {
   const relay = document.getElementById('grok-sniffer-relay');
 
   if (!relay) {

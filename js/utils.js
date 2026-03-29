@@ -38,6 +38,9 @@ var Utils = {
 
   /**
    * Deep search React props for a Post UUID
+   * NOTE: A copy of this logic exists inline in background.js (extractFiber handler)
+   * because executeScript with world:'MAIN' cannot reference this module.
+   * If you change this logic, update background.js findUUID as well.
    */
   findUUIDinProps(obj, depth = 0) {
     if (depth > 5 || !obj) return null;
@@ -98,7 +101,7 @@ var Utils = {
           }
         }
       } catch (err) {
-        console.debug('[Utils] React Fiber extraction via data attribute failed:', err);
+        Utils.Logger.warn('[Utils] React Fiber extraction via data attribute failed:', err);
       }
 
       // Collect the element and its ancestors (up to 15 levels) to handle deep bottom-up search
@@ -173,7 +176,7 @@ var Utils = {
       const match = html.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
       if (match) {
         const id = match[0].toLowerCase();
-        console.debug(`[Utils] 🚨 Using ultra fallback ID from innerHTML: ${id}`);
+        Utils.Logger.warn(`[Utils] Using ultra fallback ID from innerHTML: ${id}`);
         return {
           id,
           url: `${window.location.origin}/imagine/post/${id}`,
